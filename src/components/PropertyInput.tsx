@@ -131,7 +131,7 @@ export default function PropertyInput({
                             value={formatInputValue(inputs.arv)}
                             onChange={(e) => updateInput('arv', parseInputValue(e.target.value))}
                             placeholder="450,000"
-                            className="input-field pl-9 text-xl sm:text-2xl font-bold h-12 sm:h-14 bg-slate-800/80"
+                            className="input-field pl-10 text-xl sm:text-2xl font-bold h-12 sm:h-14 bg-slate-800/80"
                         />
                     </div>
                 </div>
@@ -217,7 +217,7 @@ export default function PropertyInput({
                                 value={formatInputValue(inputs.repairEstimate)}
                                 onChange={(e) => updateInput('repairEstimate', parseInputValue(e.target.value))}
                                 placeholder="Or enter custom..."
-                                className="input-field pl-7 text-sm h-10"
+                                className="input-field pl-8 text-sm h-10"
                             />
                         </div>
                     </div>
@@ -243,7 +243,7 @@ export default function PropertyInput({
                                 value={formatInputValue(inputs.asIsValue)}
                                 onChange={(e) => updateInput('asIsValue', parseInputValue(e.target.value))}
                                 placeholder="380,000"
-                                className="input-field pl-7"
+                                className="input-field pl-8"
                             />
                         </div>
                     </div>
@@ -258,7 +258,7 @@ export default function PropertyInput({
                                 value={formatInputValue(inputs.listPrice)}
                                 onChange={(e) => updateInput('listPrice', parseInputValue(e.target.value))}
                                 placeholder="400,000"
-                                className="input-field pl-7"
+                                className="input-field pl-8"
                             />
                         </div>
                     </div>
