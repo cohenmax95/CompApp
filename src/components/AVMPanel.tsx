@@ -149,46 +149,64 @@ const AVMPanel = forwardRef<AVMPanelRef, AVMPanelProps>(({ address, onApplyEstim
     const hasResults = results.length > 0;
 
     return (
-        <div className="glass-card p-5">
-            {/* Header - Always Visible */}
-            <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center">
-                        <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+        <div className="glass-card p-5 border-2 border-emerald-500/30 bg-gradient-to-br from-emerald-900/20 to-slate-900/50">
+            {/* Header */}
+            <div className="flex items-center gap-3 mb-4">
+                <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-emerald-500 to-green-600 flex items-center justify-center shadow-lg shadow-emerald-500/20">
+                    <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                    </svg>
+                </div>
+                <div>
+                    <h3 className="text-lg font-bold text-white">AVM Estimates</h3>
+                    <p className="text-sm text-emerald-400">
+                        {hasResults ? `${results.length} sources found` : 'Get instant property values'}
+                    </p>
+                </div>
+            </div>
+
+            {/* Prominent Fetch Button */}
+            <button
+                onClick={fetchAVMs}
+                disabled={isLoading || !address.trim()}
+                className={`w-full py-4 rounded-xl font-bold text-lg flex items-center justify-center gap-3 transition-all duration-200 ${!address.trim()
+                        ? 'bg-slate-700/50 text-slate-400 cursor-not-allowed'
+                        : isLoading
+                            ? 'bg-emerald-600/80 text-white cursor-wait'
+                            : 'bg-gradient-to-r from-emerald-500 to-green-600 text-white hover:from-emerald-400 hover:to-green-500 hover:shadow-lg hover:shadow-emerald-500/30 hover:-translate-y-0.5 active:translate-y-0'
+                    }`}
+            >
+                {isLoading ? (
+                    <>
+                        <svg className="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24">
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                        Fetching Property Values...
+                    </>
+                ) : !address.trim() ? (
+                    <>
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                        </svg>
+                        Enter Address Above to Fetch
+                    </>
+                ) : (
+                    <>
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
                         </svg>
-                    </div>
-                    <div>
-                        <h3 className="font-semibold text-white">AVM Estimates</h3>
-                        <p className="text-sm text-slate-400">
-                            {hasResults ? `${results.length} sources` : 'Fetch property values'}
-                        </p>
-                    </div>
-                </div>
+                        Fetch Property Values
+                    </>
+                )}
+            </button>
 
-                <button
-                    onClick={fetchAVMs}
-                    disabled={isLoading || !address.trim()}
-                    className="btn-primary flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed text-sm py-2 w-full sm:w-auto"
-                >
-                    {isLoading ? (
-                        <>
-                            <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
-                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                            </svg>
-                            Fetching...
-                        </>
-                    ) : (
-                        <>
-                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                            </svg>
-                            Fetch AVMs
-                        </>
-                    )}
-                </button>
-            </div>
+            {!hasResults && address.trim() && !isLoading && (
+                <p className="text-center text-xs text-emerald-400/70 mt-2">
+                    Searches Zillow, Redfin, Realtor + 4 more sources
+                </p>
+            )}
 
             {/* Loading Progress Bar */}
             {isLoading && (
