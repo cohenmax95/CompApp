@@ -94,6 +94,70 @@ export default function Home() {
         localStorage.removeItem(STORAGE_KEY);
     };
 
+    // Address history management
+    const [addressHistory, setAddressHistory] = useState<string[]>([]);
+    const HISTORY_KEY = 'compapp-history';
+
+    useEffect(() => {
+        try {
+            const saved = localStorage.getItem(HISTORY_KEY);
+            if (saved) setAddressHistory(JSON.parse(saved));
+        } catch (e) { console.error('Failed to load history:', e); }
+    }, []);
+
+    const saveToHistory = (addr: string) => {
+        if (!addr.trim()) return;
+        const updated = [addr, ...addressHistory.filter(a => a !== addr)].slice(0, 10);
+        setAddressHistory(updated);
+        localStorage.setItem(HISTORY_KEY, JSON.stringify(updated));
+    };
+
+    // Copy offer summary to clipboard
+    const copyToClipboard = async () => {
+        const text = `🏠 ${state.address || 'Property'}
+
+📊 Offers Summary:
+• 70% MAO: ${formatCurrency(results.cashOffer2.offerPrice)}
+• 80% MAO: ${formatCurrency(results.cashOffer3.offerPrice)}
+• Wholetail: ${formatCurrency(results.wholetail.offerPrice)}
+• Fix & Flip: ${formatCurrency(results.fixAndFlip.offerPrice)}
+
+💰 Best Strategy: ${results.bestStrategy}
+🎯 Best Offer: ${formatCurrency(results.bestOffer.offerPrice)}
+
+ARV: ${formatCurrency(state.inputs.arv)}
+As-Is: ${formatCurrency(state.inputs.asIsValue)}
+Repairs: ${formatCurrency(state.inputs.repairEstimate)}`;
+
+        try {
+            await navigator.clipboard.writeText(text);
+            alert('Copied to clipboard!');
+        } catch (e) {
+            console.error('Copy failed:', e);
+        }
+    };
+
+    // Share via native share API
+    const shareOffer = async () => {
+        const text = `Property: ${state.address || 'See details'}
+ARV: ${formatCurrency(state.inputs.arv)}
+Best Offer: ${formatCurrency(results.bestOffer.offerPrice)} (${results.bestStrategy})`;
+
+        if (navigator.share) {
+            try {
+                await navigator.share({
+                    title: 'FL Home Buyers - Comp Analysis',
+                    text: text,
+                });
+            } catch (e) {
+                if ((e as Error).name !== 'AbortError') console.error('Share failed:', e);
+            }
+        } else {
+            await navigator.clipboard.writeText(text);
+            alert('Link copied! (Share not supported on this device)');
+        }
+    };
+
     const exportToPDF = async () => {
         const jsPDF = (await import('jspdf')).default;
         const doc = new jsPDF();
@@ -170,17 +234,46 @@ export default function Home() {
                             />
                         </div>
 
-                        <div className="flex items-center gap-3">
+                        <div className="flex items-center gap-2 sm:gap-3">
+                            {/* Copy Button */}
+                            <button
+                                onClick={copyToClipboard}
+                                disabled={!hasInputs}
+                                className="p-2 sm:px-3 sm:py-2 rounded-lg bg-slate-800 hover:bg-slate-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                                title="Copy to Clipboard"
+                            >
+                                <svg className="w-4 h-4 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
+                                </svg>
+                                <span className="hidden sm:inline text-sm text-slate-300">Copy</span>
+                            </button>
+
+                            {/* Share Button */}
+                            <button
+                                onClick={shareOffer}
+                                disabled={!hasInputs}
+                                className="p-2 sm:px-3 sm:py-2 rounded-lg bg-slate-800 hover:bg-slate-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
+                                title="Share"
+                            >
+                                <svg className="w-4 h-4 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
+                                </svg>
+                                <span className="hidden sm:inline text-sm text-slate-300">Share</span>
+                            </button>
+
+                            {/* Export PDF Button */}
                             <button
                                 onClick={exportToPDF}
                                 disabled={!hasInputs}
-                                className="btn-secondary flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                                className="hidden sm:flex btn-secondary items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
                             >
                                 <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                                 </svg>
-                                Export PDF
+                                PDF
                             </button>
+
+                            {/* Reset Button */}
                             <button
                                 onClick={resetAll}
                                 className="p-2 rounded-lg hover:bg-slate-700/50 transition-colors group"

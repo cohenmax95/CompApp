@@ -11,7 +11,10 @@
   --text-secondary: #94a3b8;
   --text-muted: #64748b;
   --border-color: #475569;
-  --accent-gradient: linear-gradient(135deg, #0ea5e9 0%, #8b5cf6 100%);
+  /* FL Home Buyers brand green gradient */
+  --accent-gradient: linear-gradient(135deg, #4CAF50 0%, #2E7D32 100%);
+  --accent-color: #4CAF50;
+  --accent-dark: #2E7D32;
   --glass-bg: rgba(30, 41, 59, 0.8);
   --glass-border: rgba(148, 163, 184, 0.2);
 }
@@ -63,8 +66,8 @@ body {
 
 .input-field:focus {
   outline: none;
-  border-color: #0ea5e9;
-  box-shadow: 0 0 0 3px rgba(14, 165, 233, 0.2);
+  border-color: #4CAF50;
+  box-shadow: 0 0 0 3px rgba(76, 175, 80, 0.2);
 }
 
 .input-field::placeholder {
@@ -88,7 +91,7 @@ body {
 
 .btn-primary:hover {
   transform: translateY(-2px);
-  box-shadow: 0 8px 20px rgba(14, 165, 233, 0.3);
+  box-shadow: 0 8px 20px rgba(76, 175, 80, 0.3);
 }
 
 .btn-primary:active {
@@ -105,7 +108,7 @@ body {
 
 .btn-secondary:hover {
   background: var(--bg-secondary);
-  border-color: #0ea5e9;
+  border-color: #4CAF50;
 }
 
 /* Number input specific */
