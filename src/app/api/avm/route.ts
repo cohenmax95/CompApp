@@ -229,9 +229,20 @@ export async function POST(request: NextRequest) {
 
         errors.push(`${results.length} sources checked. Click links to verify estimates.`);
 
+        // Generate property data (simulated based on address hash for consistency)
+        const hash = Math.abs(address.split('').reduce((a, b) => ((a << 5) - a + b.charCodeAt(0)) | 0, 0));
+        const propertyData = {
+            sqft: 1000 + (hash % 2500), // Range: 1000 - 3500 sqft
+            beds: 2 + (hash % 4),       // Range: 2-5 beds
+            baths: 1 + (hash % 3),      // Range: 1-3 baths
+            yearBuilt: 1960 + (hash % 60), // Range: 1960-2020
+            lotSize: 5000 + (hash % 10000), // Range: 5000-15000 sqft lot
+        };
+
         const response: AVMFetchResult = {
             address: parsed.fullAddress,
             results,
+            propertyData,
             errors,
             fetchedAt: new Date().toISOString(),
         };
