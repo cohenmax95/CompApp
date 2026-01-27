@@ -8,9 +8,12 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-    title: 'CompApp - Real Estate Comp Calculator',
-    description: 'Professional comp analysis tool for real estate investors. Calculate wholesale, novation, wholetail, and flip offers instantly.',
-    keywords: ['real estate', 'comp calculator', 'wholesale', 'novation', 'fix and flip', 'wholetail'],
+    title: 'FL Home Buyers - Comp Calculator',
+    description: 'Professional comp analysis tool for FL Home Buyers. Calculate wholesale, wholetail, and flip offers instantly.',
+    keywords: ['real estate', 'FL Home Buyers', 'comp calculator', 'wholesale', 'fix and flip', 'wholetail'],
+    icons: {
+        icon: '/favicon.png',
+    },
 };
 
 export default function RootLayout({

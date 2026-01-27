@@ -82,10 +82,12 @@ export default function PropertyInput({
                         <span className="absolute left-4 top-1/2 -translate-y-1/2 text-emerald-400 text-lg font-bold">$</span>
                         <input
                             type="text"
+                            inputMode="numeric"
+                            pattern="[0-9,]*"
                             value={formatInputValue(inputs.arv)}
                             onChange={(e) => updateInput('arv', parseInputValue(e.target.value))}
                             placeholder="450,000"
-                            className="input-field pl-9 text-2xl font-bold h-14 bg-slate-800/80"
+                            className="input-field pl-9 text-xl sm:text-2xl font-bold h-12 sm:h-14 bg-slate-800/80"
                         />
                     </div>
                 </div>
@@ -96,6 +98,8 @@ export default function PropertyInput({
                         <label className="text-xs text-slate-500 mb-1.5 block uppercase tracking-wide font-medium">Sq Ft</label>
                         <input
                             type="text"
+                            inputMode="numeric"
+                            pattern="[0-9,]*"
                             value={sqft > 0 ? sqft.toLocaleString() : ''}
                             onChange={(e) => onSqftChange(parseInputValue(e.target.value))}
                             placeholder="1,500"
@@ -131,8 +135,8 @@ export default function PropertyInput({
                             <button
                                 onClick={() => applyRepair(repairEstimate.low)}
                                 className={`p-3 rounded-xl text-center transition-all ${inputs.repairEstimate === repairEstimate.low
-                                        ? 'bg-amber-500 text-white shadow-lg shadow-amber-500/30'
-                                        : 'bg-slate-800/80 text-slate-300 hover:bg-slate-700'
+                                    ? 'bg-amber-500 text-white shadow-lg shadow-amber-500/30'
+                                    : 'bg-slate-800/80 text-slate-300 hover:bg-slate-700'
                                     }`}
                             >
                                 <div className="text-[10px] uppercase tracking-wide opacity-60">Low</div>
@@ -141,8 +145,8 @@ export default function PropertyInput({
                             <button
                                 onClick={() => applyRepair(repairEstimate.median)}
                                 className={`p-3 rounded-xl text-center transition-all ${inputs.repairEstimate === repairEstimate.median
-                                        ? 'bg-amber-500 text-white shadow-lg shadow-amber-500/30'
-                                        : 'bg-slate-800/80 text-slate-300 hover:bg-slate-700'
+                                    ? 'bg-amber-500 text-white shadow-lg shadow-amber-500/30'
+                                    : 'bg-slate-800/80 text-slate-300 hover:bg-slate-700'
                                     }`}
                             >
                                 <div className="text-[10px] uppercase tracking-wide opacity-60">Mid</div>
@@ -151,8 +155,8 @@ export default function PropertyInput({
                             <button
                                 onClick={() => applyRepair(repairEstimate.high)}
                                 className={`p-3 rounded-xl text-center transition-all ${inputs.repairEstimate === repairEstimate.high
-                                        ? 'bg-amber-500 text-white shadow-lg shadow-amber-500/30'
-                                        : 'bg-slate-800/80 text-slate-300 hover:bg-slate-700'
+                                    ? 'bg-amber-500 text-white shadow-lg shadow-amber-500/30'
+                                    : 'bg-slate-800/80 text-slate-300 hover:bg-slate-700'
                                     }`}
                             >
                                 <div className="text-[10px] uppercase tracking-wide opacity-60">High</div>
@@ -164,6 +168,8 @@ export default function PropertyInput({
                             <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-sm">$</span>
                             <input
                                 type="text"
+                                inputMode="numeric"
+                                pattern="[0-9,]*"
                                 value={formatInputValue(inputs.repairEstimate)}
                                 onChange={(e) => updateInput('repairEstimate', parseInputValue(e.target.value))}
                                 placeholder="Or enter custom..."
@@ -188,6 +194,8 @@ export default function PropertyInput({
                             <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500">$</span>
                             <input
                                 type="text"
+                                inputMode="numeric"
+                                pattern="[0-9,]*"
                                 value={formatInputValue(inputs.asIsValue)}
                                 onChange={(e) => updateInput('asIsValue', parseInputValue(e.target.value))}
                                 placeholder="380,000"
@@ -201,6 +209,8 @@ export default function PropertyInput({
                             <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500">$</span>
                             <input
                                 type="text"
+                                inputMode="numeric"
+                                pattern="[0-9,]*"
                                 value={formatInputValue(inputs.listPrice)}
                                 onChange={(e) => updateInput('listPrice', parseInputValue(e.target.value))}
                                 placeholder="400,000"
