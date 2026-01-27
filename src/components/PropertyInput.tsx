@@ -123,7 +123,7 @@ export default function PropertyInput({
                 <div>
                     <label className="text-xs text-slate-500 mb-1.5 block uppercase tracking-wide font-medium">After Repair Value (ARV)</label>
                     <div className="relative">
-                        <span className="absolute left-4 top-1/2 -translate-y-1/2 text-emerald-400 text-lg font-bold">$</span>
+                        <span className="absolute left-4 top-1/2 -translate-y-1/2 text-white/70 text-lg font-bold">$</span>
                         <input
                             type="text"
                             inputMode="numeric"
@@ -209,7 +209,7 @@ export default function PropertyInput({
                         </div>
                         {/* Custom input */}
                         <div className="relative mt-3">
-                            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 text-sm">$</span>
+                            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-white/70 text-sm">$</span>
                             <input
                                 type="text"
                                 inputMode="numeric"
@@ -235,7 +235,7 @@ export default function PropertyInput({
                     <div>
                         <label className="text-xs text-slate-500 mb-1.5 block uppercase tracking-wide font-medium">As-Is Value</label>
                         <div className="relative">
-                            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500">$</span>
+                            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-white/70">$</span>
                             <input
                                 type="text"
                                 inputMode="numeric"
@@ -250,7 +250,7 @@ export default function PropertyInput({
                     <div>
                         <label className="text-xs text-slate-500 mb-1.5 block uppercase tracking-wide font-medium">List Price</label>
                         <div className="relative">
-                            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500">$</span>
+                            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-white/70">$</span>
                             <input
                                 type="text"
                                 inputMode="numeric"
