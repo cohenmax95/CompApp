@@ -221,9 +221,9 @@ Best Offer: ${formatCurrency(results.bestOffer.offerPrice)} (${results.bestStrat
     }
 
     return (
-        <main className="min-h-screen bg-gradient-to-br from-slate-900 via-slate-800 to-slate-900">
+        <main className="min-h-screen bg-gradient-to-br from-[#0a1f0a] via-[#112211] to-[#0a1f0a]">
             {/* Header */}
-            <header className="sticky top-0 z-50 backdrop-blur-xl bg-slate-900/80 border-b border-slate-700/50">
+            <header className="sticky top-0 z-50 backdrop-blur-xl bg-[#0a1f0a]/90 border-b border-[#2d4a2d]/50">
                 <div className="max-w-7xl mx-auto px-4 py-4">
                     <div className="flex items-center justify-between">
                         <div className="flex items-center gap-3">
