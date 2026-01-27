@@ -1,6 +1,7 @@
 'use client';
 
-import { OfferInputs } from '@/lib/calculations';
+import { useState } from 'react';
+import { OfferInputs, formatCurrency } from '@/lib/calculations';
 import AddressAutocomplete from './AddressAutocomplete';
 
 interface PropertyInputProps {
@@ -10,26 +11,36 @@ interface PropertyInputProps {
     onAddressChange: (address: string) => void;
 }
 
+// Rehab cost presets based on typical renovation levels
+const REHAB_PRESETS = [
+    { label: 'Light', value: 15000, description: 'Paint, carpet, minor fixes' },
+    { label: 'Moderate', value: 35000, description: 'Kitchen/bath updates, flooring' },
+    { label: 'Heavy', value: 65000, description: 'Major systems, structural' },
+    { label: 'Full Gut', value: 100000, description: 'Complete renovation' },
+];
+
 export default function PropertyInput({
     inputs,
     onInputsChange,
     address,
     onAddressChange
 }: PropertyInputProps) {
-    const updateInput = <K extends keyof OfferInputs>(
-        key: K,
-        value: OfferInputs[K]
-    ) => {
+    const [arvPercent, setArvPercent] = useState(70);
+
+    const updateInput = <K extends keyof OfferInputs>(key: K, value: OfferInputs[K]) => {
         onInputsChange({ ...inputs, [key]: value });
     };
 
-    const formatInputValue = (value: number) => {
-        return value > 0 ? value.toString() : '';
-    };
-
+    const formatInputValue = (value: number) => value > 0 ? value.toString() : '';
     const parseInputValue = (value: string) => {
         const parsed = parseFloat(value.replace(/[^0-9.-]/g, ''));
         return isNaN(parsed) ? 0 : parsed;
+    };
+
+    // Calculate MAO based on slider percentage
+    const calculateMAO = () => {
+        if (inputs.arv <= 0) return 0;
+        return Math.round(inputs.arv * (arvPercent / 100) - inputs.repairEstimate);
     };
 
     return (
@@ -47,7 +58,7 @@ export default function PropertyInput({
                 </div>
             </div>
 
-            {/* Property Address with Autocomplete */}
+            {/* Property Address */}
             <div>
                 <label className="input-label">Property Address</label>
                 <AddressAutocomplete
@@ -58,113 +69,138 @@ export default function PropertyInput({
                 />
             </div>
 
-            {/* Value Inputs */}
+            {/* ARV Input */}
+            <div>
+                <label className="input-label">ARV (After Repair Value)</label>
+                <div className="relative">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">$</span>
+                    <input
+                        type="text"
+                        value={formatInputValue(inputs.arv)}
+                        onChange={(e) => updateInput('arv', parseInputValue(e.target.value))}
+                        placeholder="Enter ARV..."
+                        className="input-field pl-7 text-xl font-bold"
+                    />
+                </div>
+            </div>
+
+            {/* MAO Slider - The main feature! */}
+            {inputs.arv > 0 && (
+                <div className="p-4 rounded-xl bg-gradient-to-r from-emerald-900/30 to-teal-900/30 border border-emerald-500/30">
+                    <div className="flex items-center justify-between mb-3">
+                        <label className="text-sm font-medium text-emerald-300">Quick Offer Calculator</label>
+                        <span className="text-2xl font-bold text-white">{arvPercent}% of ARV</span>
+                    </div>
+
+                    {/* Slider */}
+                    <input
+                        type="range"
+                        min="50"
+                        max="90"
+                        step="5"
+                        value={arvPercent}
+                        onChange={(e) => setArvPercent(parseInt(e.target.value))}
+                        className="w-full h-3 bg-slate-700 rounded-lg appearance-none cursor-pointer slider-thumb"
+                        style={{
+                            background: `linear-gradient(to right, #10b981 0%, #10b981 ${(arvPercent - 50) * 2.5}%, #334155 ${(arvPercent - 50) * 2.5}%, #334155 100%)`
+                        }}
+                    />
+
+                    {/* Slider Labels */}
+                    <div className="flex justify-between text-xs text-slate-400 mt-2">
+                        <span>50%</span>
+                        <span>60%</span>
+                        <span>70%</span>
+                        <span>80%</span>
+                        <span>90%</span>
+                    </div>
+
+                    {/* MAO Result */}
+                    <div className="mt-4 p-3 rounded-lg bg-slate-900/50 flex items-center justify-between">
+                        <span className="text-slate-300">Max Offer (MAO):</span>
+                        <span className="text-2xl font-bold text-emerald-400">{formatCurrency(calculateMAO())}</span>
+                    </div>
+
+                    <p className="text-xs text-slate-500 mt-2 text-center">
+                        {formatCurrency(inputs.arv)} × {arvPercent}% − {formatCurrency(inputs.repairEstimate)} repairs
+                    </p>
+                </div>
+            )}
+
+            {/* Rehab Cost Presets */}
+            <div>
+                <label className="input-label mb-2">Repair Estimate</label>
+                <div className="grid grid-cols-4 gap-2 mb-3">
+                    {REHAB_PRESETS.map((preset) => (
+                        <button
+                            key={preset.label}
+                            onClick={() => updateInput('repairEstimate', preset.value)}
+                            className={`p-2 rounded-lg text-center transition-all ${inputs.repairEstimate === preset.value
+                                    ? 'bg-amber-600 text-white ring-2 ring-amber-400'
+                                    : 'bg-slate-800 text-slate-300 hover:bg-slate-700'
+                                }`}
+                        >
+                            <div className="text-xs font-medium">{preset.label}</div>
+                            <div className="text-sm font-bold">${(preset.value / 1000)}k</div>
+                        </button>
+                    ))}
+                </div>
+                <div className="relative">
+                    <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">$</span>
+                    <input
+                        type="text"
+                        value={formatInputValue(inputs.repairEstimate)}
+                        onChange={(e) => updateInput('repairEstimate', parseInputValue(e.target.value))}
+                        placeholder="Or enter custom amount..."
+                        className="input-field pl-7"
+                    />
+                </div>
+            </div>
+
+            {/* Secondary Inputs */}
             <div className="grid grid-cols-2 gap-4">
                 <div>
-                    <label className="input-label flex items-center gap-1">
-                        ARV
-                        <span className="tooltip text-slate-500" data-tooltip="After Repair Value - fully renovated market value">
-                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                            </svg>
-                        </span>
-                    </label>
-                    <div className="relative">
-                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">$</span>
-                        <input
-                            type="text"
-                            value={formatInputValue(inputs.arv)}
-                            onChange={(e) => updateInput('arv', parseInputValue(e.target.value))}
-                            placeholder="469,000"
-                            className="input-field pl-7 text-lg font-semibold"
-                        />
-                    </div>
-                </div>
-
-                <div>
-                    <label className="input-label flex items-center gap-1">
-                        As-Is Value
-                        <span className="tooltip text-slate-500" data-tooltip="Current value in present condition">
-                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                            </svg>
-                        </span>
-                    </label>
+                    <label className="input-label">As-Is Value</label>
                     <div className="relative">
                         <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">$</span>
                         <input
                             type="text"
                             value={formatInputValue(inputs.asIsValue)}
                             onChange={(e) => updateInput('asIsValue', parseInputValue(e.target.value))}
-                            placeholder="425,000"
-                            className="input-field pl-7 text-lg font-semibold"
+                            placeholder="Current value"
+                            className="input-field pl-7"
                         />
                     </div>
                 </div>
-
                 <div>
-                    <label className="input-label flex items-center gap-1">
-                        Repair Estimate
-                        <span className="tooltip text-slate-500" data-tooltip="Estimated cost to reach ARV">
-                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                            </svg>
-                        </span>
-                    </label>
-                    <div className="relative">
-                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">$</span>
-                        <input
-                            type="text"
-                            value={formatInputValue(inputs.repairEstimate)}
-                            onChange={(e) => updateInput('repairEstimate', parseInputValue(e.target.value))}
-                            placeholder="16,000"
-                            className="input-field pl-7 text-lg font-semibold"
-                        />
-                    </div>
-                </div>
-
-                <div>
-                    <label className="input-label flex items-center gap-1">
-                        List/Ask Price
-                        <span className="tooltip text-slate-500" data-tooltip="Seller's asking price">
-                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
-                            </svg>
-                        </span>
-                    </label>
+                    <label className="input-label">List/Ask Price</label>
                     <div className="relative">
                         <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">$</span>
                         <input
                             type="text"
                             value={formatInputValue(inputs.listPrice)}
                             onChange={(e) => updateInput('listPrice', parseInputValue(e.target.value))}
-                            placeholder="400,000"
-                            className="input-field pl-7 text-lg font-semibold"
+                            placeholder="Asking price"
+                            className="input-field pl-7"
                         />
                     </div>
                 </div>
             </div>
 
             {/* Quick Stats */}
-            {inputs.arv > 0 && inputs.asIsValue > 0 && (
+            {inputs.arv > 0 && inputs.repairEstimate > 0 && (
                 <div className="pt-4 border-t border-slate-700/50">
-                    <div className="grid grid-cols-3 gap-3 text-center">
+                    <div className="grid grid-cols-2 gap-3 text-center">
                         <div className="p-3 rounded-xl bg-slate-800/50">
-                            <p className="text-xs text-slate-400">Repair %</p>
+                            <p className="text-xs text-slate-400">Repair % of ARV</p>
                             <p className="text-lg font-semibold text-white">
                                 {((inputs.repairEstimate / inputs.arv) * 100).toFixed(1)}%
                             </p>
                         </div>
                         <div className="p-3 rounded-xl bg-slate-800/50">
-                            <p className="text-xs text-slate-400">Equity Gap</p>
-                            <p className="text-lg font-semibold text-white">
-                                ${((inputs.arv - inputs.asIsValue) / 1000).toFixed(0)}k
-                            </p>
-                        </div>
-                        <div className="p-3 rounded-xl bg-slate-800/50">
-                            <p className="text-xs text-slate-400">As-Is / ARV</p>
-                            <p className="text-lg font-semibold text-white">
-                                {((inputs.asIsValue / inputs.arv) * 100).toFixed(0)}%
+                            <p className="text-xs text-slate-400">Equity Potential</p>
+                            <p className="text-lg font-semibold text-emerald-400">
+                                {formatCurrency(inputs.arv - (inputs.asIsValue || inputs.arv * 0.85) - inputs.repairEstimate)}
                             </p>
                         </div>
                     </div>
