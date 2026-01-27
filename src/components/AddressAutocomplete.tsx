@@ -128,7 +128,7 @@ export default function AddressAutocomplete({
                     onKeyDown={handleKeyDown}
                     onFocus={() => predictions.length > 0 && setIsOpen(true)}
                     placeholder={placeholder || "Enter address, press Enter to fetch..."}
-                    className={`${className || "input-field"} pl-10 pr-10`}
+                    className={`${className || "input-field"} pl-12 pr-10`}
                 />
                 {isLoading && (
                     <div className="absolute right-3 top-1/2 -translate-y-1/2">
