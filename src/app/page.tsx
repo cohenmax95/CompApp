@@ -18,6 +18,7 @@ interface AppState {
     settings: OfferSettings;
     inputs: OfferInputs;
     address: string;
+    sqft: number;
 }
 
 const STORAGE_KEY = 'compapp-state';
@@ -31,6 +32,7 @@ const DEFAULT_STATE: AppState = {
         listPrice: 0,
     },
     address: '',
+    sqft: 0,
 };
 
 export default function Home() {
@@ -207,6 +209,8 @@ export default function Home() {
                             onInputsChange={(inputs) => setState((s) => ({ ...s, inputs }))}
                             address={state.address}
                             onAddressChange={(address) => setState((s) => ({ ...s, address }))}
+                            sqft={state.sqft}
+                            onSqftChange={(sqft) => setState((s) => ({ ...s, sqft }))}
                         />
 
                         <AVMPanel
