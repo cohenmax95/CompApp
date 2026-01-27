@@ -35,7 +35,7 @@ export default function OfferCard({
         }
         if (offer.marginPercent >= 15) {
             return (
-                <span className="px-2 py-1 text-xs font-medium rounded-full bg-emerald-500/20 text-emerald-400">
+                <span className="px-2 py-1 text-xs font-medium rounded-full bg-emerald-500/20 text-emerald-400 viable-glow">
                     Viable
                 </span>
             );
@@ -59,7 +59,7 @@ export default function OfferCard({
                         <h3 className="font-semibold text-white flex items-center gap-2">
                             {title}
                             {isHighlighted && (
-                                <span className="px-2 py-0.5 text-xs font-medium rounded-full bg-blue-500/20 text-blue-400">
+                                <span className="px-2 py-0.5 text-xs font-medium rounded-full bg-blue-500/20 text-blue-400 best-indicator">
                                     Best
                                 </span>
                             )}

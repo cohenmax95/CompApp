@@ -169,7 +169,7 @@ const AVMPanel = forwardRef<AVMPanelRef, AVMPanelProps>(({ address, onApplyEstim
                 <button
                     onClick={fetchAVMs}
                     disabled={isLoading || !address.trim()}
-                    className="btn-primary flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed text-sm py-2"
+                    className="btn-primary flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed text-sm py-2 w-full sm:w-auto"
                 >
                     {isLoading ? (
                         <>

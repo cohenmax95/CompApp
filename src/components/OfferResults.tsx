@@ -12,13 +12,19 @@ export default function OfferResultsDisplay({ results, hasInputs }: OfferResults
     if (!hasInputs) {
         return (
             <div className="glass-card p-12 text-center">
-                <div className="w-16 h-16 mx-auto mb-4 rounded-2xl bg-slate-800/50 flex items-center justify-center">
-                    <svg className="w-8 h-8 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
+                <div className="w-20 h-20 mx-auto mb-6 rounded-2xl bg-gradient-to-br from-emerald-500/20 to-teal-500/20 flex items-center justify-center animate-pulse">
+                    <svg className="w-10 h-10 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 7h6m0 10v-3m-3 3h.01M9 17h.01M9 14h.01M12 14h.01M15 11h.01M12 11h.01M9 11h.01M7 21h10a2 2 0 002-2V5a2 2 0 00-2-2H7a2 2 0 00-2 2v14a2 2 0 002 2z" />
                     </svg>
                 </div>
-                <h3 className="text-lg font-semibold text-white mb-2">Enter Property Values</h3>
-                <p className="text-slate-400">Add ARV, As-Is Value, and Repair Estimate to calculate offers</p>
+                <h3 className="text-xl font-semibold text-white mb-3">Ready to Calculate</h3>
+                <p className="text-slate-400 max-w-sm mx-auto">Enter the property ARV, As-Is Value, and Repair Estimate to see all your offer options</p>
+                <div className="mt-6 flex items-center justify-center gap-2 text-sm text-emerald-400">
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 7l5 5m0 0l-5 5m5-5H6" />
+                    </svg>
+                    Start by entering values on the left
+                </div>
             </div>
         );
     }
