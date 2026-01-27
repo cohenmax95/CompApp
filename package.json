@@ -9,9 +9,13 @@
     "lint": "next lint"
   },
   "dependencies": {
+    "2captcha": "^3.0.5-2",
     "date-fns": "^4.1.0",
     "jspdf": "^2.5.2",
     "next": "^15.5.10",
+    "puppeteer": "^24.36.0",
+    "puppeteer-extra": "^3.3.6",
+    "puppeteer-extra-plugin-stealth": "^2.11.2",
     "react": "^19.0.0",
     "react-dom": "^19.0.0"
   },
