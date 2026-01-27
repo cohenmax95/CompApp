@@ -13,6 +13,7 @@ import SettingsPanel from '@/components/SettingsPanel';
 import PropertyInput from '@/components/PropertyInput';
 import OfferResultsDisplay from '@/components/OfferResults';
 import AVMPanel, { AVMPanelRef } from '@/components/AVMPanel';
+import { ToastContainer, OfflineIndicator, ConfirmModal, showToast } from '@/components/Toast';
 
 interface AppState {
     settings: OfferSettings;
@@ -89,9 +90,14 @@ export default function Home() {
 
     const hasInputs = state.inputs.arv > 0 && state.inputs.asIsValue > 0;
 
-    const resetAll = () => {
+    // Confirm reset modal
+    const [showConfirmReset, setShowConfirmReset] = useState(false);
+
+    const handleResetAll = () => {
         setState(DEFAULT_STATE);
         localStorage.removeItem(STORAGE_KEY);
+        setShowConfirmReset(false);
+        showToast('All data reset', 'info');
     };
 
     // Address history management
@@ -131,9 +137,9 @@ Repairs: ${formatCurrency(state.inputs.repairEstimate)}`;
 
         try {
             await navigator.clipboard.writeText(text);
-            alert('Copied to clipboard!');
+            showToast('Copied to clipboard!', 'success');
         } catch (e) {
-            console.error('Copy failed:', e);
+            showToast('Copy failed', 'error');
         }
     };
 
@@ -154,7 +160,7 @@ Best Offer: ${formatCurrency(results.bestOffer.offerPrice)} (${results.bestStrat
             }
         } else {
             await navigator.clipboard.writeText(text);
-            alert('Link copied! (Share not supported on this device)');
+            showToast('Link copied!', 'info');
         }
     };
 
@@ -275,11 +281,11 @@ Best Offer: ${formatCurrency(results.bestOffer.offerPrice)} (${results.bestStrat
 
                             {/* Reset Button */}
                             <button
-                                onClick={resetAll}
-                                className="p-2 rounded-lg hover:bg-slate-700/50 transition-colors group"
+                                onClick={() => setShowConfirmReset(true)}
+                                className="p-2 rounded-lg hover:bg-[#1a3318]/50 transition-colors group"
                                 title="Reset All"
                             >
-                                <svg className="w-5 h-5 text-slate-400 group-hover:text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <svg className="w-5 h-5 text-[#88b088] group-hover:text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                                 </svg>
                             </button>
@@ -323,9 +329,24 @@ Best Offer: ${formatCurrency(results.bestOffer.offerPrice)} (${results.bestStrat
             </div>
 
             {/* Footer */}
-            <footer className="mt-12 pb-6 text-center text-sm text-slate-500">
-                <p>CompApp v1.0 • Real-time calculations • Data saved locally</p>
+            <footer className="mt-12 pb-6 text-center text-sm text-[#557755]">
+                <p>FL Home Buyers Comp Calculator • Real-time calculations • Data saved locally</p>
             </footer>
+
+            {/* Toast Notifications */}
+            <ToastContainer />
+
+            {/* Offline Indicator */}
+            <OfflineIndicator />
+
+            {/* Confirm Reset Modal */}
+            <ConfirmModal
+                isOpen={showConfirmReset}
+                title="Reset All Data?"
+                message="This will clear all inputs, settings, and address history. This cannot be undone."
+                onConfirm={handleResetAll}
+                onCancel={() => setShowConfirmReset(false)}
+            />
         </main>
     );
 }
