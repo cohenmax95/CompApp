@@ -13,6 +13,8 @@ interface PropertyInputProps {
     sqft: number;
     onSqftChange: (sqft: number) => void;
     onFetchAVMs?: () => void;
+    addressHistory?: string[];
+    onSaveToHistory?: (addr: string) => void;
 }
 
 export default function PropertyInput({
@@ -23,9 +25,12 @@ export default function PropertyInput({
     sqft,
     onSqftChange,
     onFetchAVMs,
+    addressHistory = [],
+    onSaveToHistory,
 }: PropertyInputProps) {
     const [arvPercent, setArvPercent] = useState(70);
     const [selectedLevel, setSelectedLevel] = useState<RehabLevel>(REHAB_LEVELS[4]);
+    const [showHistory, setShowHistory] = useState(false);
 
     const updateInput = <K extends keyof OfferInputs>(key: K, value: OfferInputs[K]) => {
         onInputsChange({ ...inputs, [key]: value });
@@ -48,28 +53,67 @@ export default function PropertyInput({
         return Math.round(inputs.arv * (arvPercent / 100) - inputs.repairEstimate);
     };
 
+    const handleFetchAVMs = () => {
+        if (address.trim() && onSaveToHistory) {
+            onSaveToHistory(address);
+        }
+        onFetchAVMs?.();
+    };
+
+    const selectFromHistory = (addr: string) => {
+        onAddressChange(addr);
+        setShowHistory(false);
+    };
+
     return (
         <div className="glass-card p-6">
             {/* Header */}
             <div className="flex items-center gap-3 mb-6">
-                <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center flex-shrink-0 shadow-lg shadow-emerald-500/20">
+                <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-[#4CAF50] to-[#2E7D32] flex items-center justify-center flex-shrink-0 shadow-lg shadow-green-500/20">
                     <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
                     </svg>
                 </div>
-                <div>
+                <div className="flex-1">
                     <h3 className="font-bold text-white text-lg">Property Details</h3>
                     <p className="text-xs text-slate-500">Enter address, press Enter to fetch</p>
                 </div>
+                {addressHistory.length > 0 && (
+                    <button
+                        onClick={() => setShowHistory(!showHistory)}
+                        className="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 transition-colors"
+                        title="Recent addresses"
+                    >
+                        <svg className="w-5 h-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                    </button>
+                )}
             </div>
 
             <div className="space-y-5">
+                {/* Recent Addresses Dropdown */}
+                {showHistory && addressHistory.length > 0 && (
+                    <div className="p-3 rounded-xl bg-slate-800/80 border border-slate-700 space-y-1 animate-fade-in">
+                        <p className="text-xs text-slate-500 uppercase tracking-wide mb-2">Recent Addresses</p>
+                        {addressHistory.slice(0, 5).map((addr, i) => (
+                            <button
+                                key={i}
+                                onClick={() => selectFromHistory(addr)}
+                                className="w-full text-left px-3 py-2 rounded-lg text-sm text-slate-300 hover:bg-slate-700 transition-colors truncate"
+                            >
+                                {addr}
+                            </button>
+                        ))}
+                    </div>
+                )}
+
                 {/* Address */}
                 <div>
                     <AddressAutocomplete
                         value={address}
                         onChange={onAddressChange}
-                        onEnter={onFetchAVMs}
+                        onEnter={handleFetchAVMs}
                         placeholder="Enter address, press Enter..."
                         className="input-field"
                     />

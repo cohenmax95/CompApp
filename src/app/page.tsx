@@ -300,6 +300,8 @@ Best Offer: ${formatCurrency(results.bestOffer.offerPrice)} (${results.bestStrat
                             onAddressChange={(address) => setState((s) => ({ ...s, address }))}
                             sqft={state.sqft}
                             onSqftChange={(sqft) => setState((s) => ({ ...s, sqft }))}
+                            addressHistory={addressHistory}
+                            onSaveToHistory={saveToHistory}
                         />
 
                         <AVMPanel
