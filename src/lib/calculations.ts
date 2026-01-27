@@ -239,7 +239,8 @@ export function calculateOffers(
         expectedProfit: Math.round(profit),
         marginPercent: salesPrice > 0 ? (profit / salesPrice) * 100 : 0,
         closingDate,
-        isViable: profit >= settings.minProfitReserve && price > 0 && price <= listPrice,
+        // Fixed: Only check listPrice if it's actually set (> 0)
+        isViable: profit >= settings.minProfitReserve && price > 0 && (listPrice <= 0 || price <= listPrice),
         terms,
         daysToClose,
     });

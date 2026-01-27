@@ -1,18 +1,43 @@
 'use client';
 
-import { useState } from 'react';
-import { AVMResult, AVMFetchResult, formatAVMCurrency } from '@/lib/avm';
+import { useState, useEffect } from 'react';
+import { AVMResult, AVMFetchResult, formatAVMCurrency, PropertyData } from '@/lib/avm';
 
 interface AVMPanelProps {
     address: string;
-    onApplyEstimate: (arv: number, asIsValue: number) => void;
+    onApplyEstimate: (arv: number, asIsValue: number, sqft?: number) => void;
 }
 
 export default function AVMPanel({ address, onApplyEstimate }: AVMPanelProps) {
     const [results, setResults] = useState<AVMResult[]>([]);
+    const [propertyData, setPropertyData] = useState<PropertyData | null>(null);
     const [isLoading, setIsLoading] = useState(false);
+    const [loadingProgress, setLoadingProgress] = useState(0);
     const [error, setError] = useState<string | null>(null);
     const [isExpanded, setIsExpanded] = useState(false);
+
+    // Animate loading progress
+    useEffect(() => {
+        if (isLoading) {
+            setLoadingProgress(0);
+            const interval = setInterval(() => {
+                setLoadingProgress(prev => {
+                    // Progress accelerates then slows near end (never quite reaches 100 until done)
+                    if (prev < 30) return prev + 8;
+                    if (prev < 60) return prev + 5;
+                    if (prev < 85) return prev + 2;
+                    if (prev < 95) return prev + 0.5;
+                    return prev;
+                });
+            }, 100);
+            return () => clearInterval(interval);
+        } else {
+            setLoadingProgress(100);
+            // Reset after animation completes
+            const timeout = setTimeout(() => setLoadingProgress(0), 500);
+            return () => clearTimeout(timeout);
+        }
+    }, [isLoading]);
 
     const fetchAVMs = async () => {
         if (!address.trim()) {
@@ -37,6 +62,7 @@ export default function AVMPanel({ address, onApplyEstimate }: AVMPanelProps) {
 
             const data: AVMFetchResult = await response.json();
             setResults(data.results);
+            setPropertyData(data.propertyData);
 
             if (data.errors.length > 0) {
                 console.log('AVM notes:', data.errors);
@@ -44,25 +70,49 @@ export default function AVMPanel({ address, onApplyEstimate }: AVMPanelProps) {
         } catch (err) {
             setError(err instanceof Error ? err.message : 'Failed to fetch AVM data');
             setResults([]);
+            setPropertyData(null);
         } finally {
             setIsLoading(false);
         }
     };
 
-    const calculateAverage = () => {
-        if (results.length === 0) return 0;
-        const sum = results.reduce((acc, r) => acc + r.estimate, 0);
-        return Math.round(sum / results.length);
+    // Calculate estimates using spreadsheet methodology:
+    // Remove highest and lowest values (outliers), then average the middle values
+    const calculateEstimates = () => {
+        if (results.length === 0) return { bestEstimate: 0, median: 0 };
+
+        const sorted = [...results].sort((a, b) => a.estimate - b.estimate);
+        const estimates = sorted.map(r => r.estimate);
+
+        // Median
+        const mid = Math.floor(estimates.length / 2);
+        const median = estimates.length % 2 === 0
+            ? Math.round((estimates[mid - 1] + estimates[mid]) / 2)
+            : estimates[mid];
+
+        // Trimmed mean: exclude top and bottom ~12.5% (like spreadsheet)
+        if (estimates.length <= 4) {
+            return { bestEstimate: median, median };
+        }
+
+        const trimCount = Math.max(1, Math.floor(estimates.length * 0.125));
+        const trimmed = estimates.slice(trimCount, estimates.length - trimCount);
+        const trimmedMean = Math.round(trimmed.reduce((a, b) => a + b, 0) / trimmed.length);
+
+        // Use the lesser of median and trimmed mean (conservative, like spreadsheet)
+        const bestEstimate = Math.min(median, trimmedMean);
+
+        return { bestEstimate, median };
     };
 
-    const applyAverage = () => {
-        const avg = calculateAverage();
-        if (avg > 0) {
-            onApplyEstimate(avg, Math.round(avg * 0.9));
+    const applyEstimate = () => {
+        const { bestEstimate } = calculateEstimates();
+        if (bestEstimate > 0) {
+            onApplyEstimate(bestEstimate, Math.round(bestEstimate * 0.9), propertyData?.sqft);
         }
     };
 
-    const average = calculateAverage();
+    const { bestEstimate, median } = calculateEstimates();
     const hasResults = results.length > 0;
 
     return (
@@ -107,6 +157,22 @@ export default function AVMPanel({ address, onApplyEstimate }: AVMPanelProps) {
                 </button>
             </div>
 
+            {/* Loading Progress Bar */}
+            {isLoading && (
+                <div className="mt-4">
+                    <div className="flex items-center justify-between text-xs text-slate-400 mb-1">
+                        <span>Fetching from {24} sources...</span>
+                        <span>{Math.round(loadingProgress)}%</span>
+                    </div>
+                    <div className="h-2 bg-slate-700 rounded-full overflow-hidden">
+                        <div
+                            className="h-full bg-gradient-to-r from-cyan-500 to-blue-500 transition-all duration-100 ease-out"
+                            style={{ width: `${loadingProgress}%` }}
+                        />
+                    </div>
+                </div>
+            )}
+
             {/* Error */}
             {error && (
                 <div className="mt-4 p-3 rounded-lg bg-red-500/20 border border-red-500/30 text-red-300 text-sm">
@@ -115,7 +181,7 @@ export default function AVMPanel({ address, onApplyEstimate }: AVMPanelProps) {
             )}
 
             {/* No address warning */}
-            {!address.trim() && !error && !hasResults && (
+            {!address.trim() && !error && !hasResults && !isLoading && (
                 <div className="mt-4 p-4 rounded-lg bg-slate-800/50 text-center text-slate-400 text-sm">
                     Enter a property address above to fetch AVM estimates
                 </div>
@@ -124,16 +190,28 @@ export default function AVMPanel({ address, onApplyEstimate }: AVMPanelProps) {
             {/* Results Summary - Always visible when we have results */}
             {hasResults && (
                 <div className="mt-4 space-y-3">
-                    {/* Average + Apply Button - Main Action Area */}
+                    {/* Property Data Summary */}
+                    {propertyData && (
+                        <div className="p-3 rounded-lg bg-slate-800/50 flex items-center justify-between text-sm">
+                            <span className="text-slate-400">Property Info:</span>
+                            <span className="text-white font-medium">
+                                {propertyData.sqft.toLocaleString()} sqft • {propertyData.beds} bed • {propertyData.baths} bath • Built {propertyData.yearBuilt}
+                            </span>
+                        </div>
+                    )}
+
+                    {/* Best Estimate + Apply Button - Main Action Area */}
                     <div className="p-4 rounded-xl bg-gradient-to-r from-blue-900/40 to-purple-900/40 border border-blue-500/30">
                         <div className="flex items-center justify-between gap-4">
                             <div>
-                                <p className="text-xs text-blue-300 mb-1">Average Estimate</p>
-                                <p className="text-2xl font-bold text-white">{formatAVMCurrency(average)}</p>
-                                <p className="text-xs text-slate-400 mt-1">from {results.length} sources</p>
+                                <p className="text-xs text-blue-300 mb-1">Best Estimate (Trimmed Mean)</p>
+                                <p className="text-2xl font-bold text-white">{formatAVMCurrency(bestEstimate)}</p>
+                                <p className="text-xs text-slate-400 mt-1">
+                                    Lesser of median ({formatAVMCurrency(median)}) & trimmed avg
+                                </p>
                             </div>
                             <button
-                                onClick={applyAverage}
+                                onClick={applyEstimate}
                                 className="px-5 py-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-medium transition-all hover:scale-105 shadow-lg"
                             >
                                 Use as ARV

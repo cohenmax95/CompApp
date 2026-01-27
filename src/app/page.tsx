@@ -57,8 +57,8 @@ export default function Home() {
         setIsLoaded(true);
     }, []);
 
-    // Apply AVM estimates to inputs
-    const handleApplyAVMEstimate = (arv: number, asIsValue: number) => {
+    // Apply AVM estimates to inputs (including sqft from property data)
+    const handleApplyAVMEstimate = (arv: number, asIsValue: number, sqftFromAVM?: number) => {
         setState((s) => ({
             ...s,
             inputs: {
@@ -66,6 +66,8 @@ export default function Home() {
                 arv,
                 asIsValue,
             },
+            // Auto-fill sqft if provided from AVM and not already set
+            sqft: sqftFromAVM && s.sqft === 0 ? sqftFromAVM : s.sqft,
         }));
     };
 
@@ -120,13 +122,11 @@ export default function Home() {
 
         let y = 106;
         const offers = [
-            { name: '1st Cash Offer (15%)', offer: results.cashOffer1 },
-            { name: '2nd Cash Offer (22.5%)', offer: results.cashOffer2 },
-            { name: '3rd Cash Offer (30%)', offer: results.cashOffer3 },
-            { name: 'Max Wholesale', offer: results.maxWholesale },
-            { name: 'Novation-Only', offer: results.novationOnly },
+            { name: '60% of ARV (Conservative)', offer: results.cashOffer1 },
+            { name: '70% of ARV (Standard)', offer: results.cashOffer2 },
+            { name: '80% of ARV (Aggressive)', offer: results.cashOffer3 },
+            { name: '85% of ARV (Max Offer)', offer: results.maxWholesale },
             { name: 'Wholetail', offer: results.wholetail },
-            { name: 'Renovate to Sell', offer: results.renovateToSell },
             { name: 'Fix & Flip', offer: results.fixAndFlip },
         ];
 
