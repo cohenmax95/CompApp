@@ -37,6 +37,7 @@ export default function PropertyInput({
     };
 
     const formatInputValue = (value: number) => value > 0 ? value.toLocaleString() : '';
+    const formatCurrencyValue = (value: number) => value > 0 ? '$' + value.toLocaleString() : '';
     const parseInputValue = (value: string) => {
         const parsed = parseFloat(value.replace(/[^0-9.-]/g, ''));
         return isNaN(parsed) ? 0 : parsed;
@@ -122,18 +123,15 @@ export default function PropertyInput({
                 {/* ARV - Full Width, Prominent */}
                 <div>
                     <label className="text-xs text-slate-500 mb-1.5 block uppercase tracking-wide font-medium">After Repair Value (ARV)</label>
-                    <div className="relative">
-                        <span className="absolute left-4 top-1/2 -translate-y-1/2 text-white text-lg font-bold">$</span>
-                        <input
-                            type="text"
-                            inputMode="numeric"
-                            pattern="[0-9,]*"
-                            value={formatInputValue(inputs.arv)}
-                            onChange={(e) => updateInput('arv', parseInputValue(e.target.value))}
-                            placeholder="450,000"
-                            className="input-field pl-10 text-xl sm:text-2xl font-bold h-12 sm:h-14 bg-slate-800/80"
-                        />
-                    </div>
+                    <input
+                        type="text"
+                        inputMode="numeric"
+                        pattern="[0-9,$]*"
+                        value={formatCurrencyValue(inputs.arv)}
+                        onChange={(e) => updateInput('arv', parseInputValue(e.target.value))}
+                        placeholder="$450,000"
+                        className="input-field text-xl sm:text-2xl font-bold h-12 sm:h-14 bg-slate-800/80"
+                    />
                 </div>
 
                 {/* Sq Ft + Condition Row */}
@@ -208,16 +206,15 @@ export default function PropertyInput({
                             </button>
                         </div>
                         {/* Custom input */}
-                        <div className="relative mt-3">
-                            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-white text-sm">$</span>
+                        <div className="mt-3">
                             <input
                                 type="text"
                                 inputMode="numeric"
-                                pattern="[0-9,]*"
-                                value={formatInputValue(inputs.repairEstimate)}
+                                pattern="[0-9,$]*"
+                                value={formatCurrencyValue(inputs.repairEstimate)}
                                 onChange={(e) => updateInput('repairEstimate', parseInputValue(e.target.value))}
-                                placeholder="Or enter custom..."
-                                className="input-field pl-8 text-sm h-10"
+                                placeholder="Or enter custom $amount..."
+                                className="input-field text-sm h-10"
                             />
                         </div>
                     </div>
@@ -234,33 +231,27 @@ export default function PropertyInput({
                 <div className="grid grid-cols-2 gap-3">
                     <div>
                         <label className="text-xs text-slate-500 mb-1.5 block uppercase tracking-wide font-medium">As-Is Value</label>
-                        <div className="relative">
-                            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-white">$</span>
-                            <input
-                                type="text"
-                                inputMode="numeric"
-                                pattern="[0-9,]*"
-                                value={formatInputValue(inputs.asIsValue)}
-                                onChange={(e) => updateInput('asIsValue', parseInputValue(e.target.value))}
-                                placeholder="380,000"
-                                className="input-field pl-8"
-                            />
-                        </div>
+                        <input
+                            type="text"
+                            inputMode="numeric"
+                            pattern="[0-9,$]*"
+                            value={formatCurrencyValue(inputs.asIsValue)}
+                            onChange={(e) => updateInput('asIsValue', parseInputValue(e.target.value))}
+                            placeholder="$380,000"
+                            className="input-field"
+                        />
                     </div>
                     <div>
                         <label className="text-xs text-slate-500 mb-1.5 block uppercase tracking-wide font-medium">List Price</label>
-                        <div className="relative">
-                            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-white">$</span>
-                            <input
-                                type="text"
-                                inputMode="numeric"
-                                pattern="[0-9,]*"
-                                value={formatInputValue(inputs.listPrice)}
-                                onChange={(e) => updateInput('listPrice', parseInputValue(e.target.value))}
-                                placeholder="400,000"
-                                className="input-field pl-8"
-                            />
-                        </div>
+                        <input
+                            type="text"
+                            inputMode="numeric"
+                            pattern="[0-9,$]*"
+                            value={formatCurrencyValue(inputs.listPrice)}
+                            onChange={(e) => updateInput('listPrice', parseInputValue(e.target.value))}
+                            placeholder="$400,000"
+                            className="input-field"
+                        />
                     </div>
                 </div>
 
