@@ -76,6 +76,30 @@ const AVMPanel = forwardRef<AVMPanelRef, AVMPanelProps>(({ address, onApplyEstim
             if (data.errors.length > 0) {
                 console.log('AVM notes:', data.errors);
             }
+
+            // Auto-apply estimates after successful fetch
+            if (data.results.length > 0) {
+                const sorted = [...data.results].sort((a, b) => a.estimate - b.estimate);
+                const estimates = sorted.map(r => r.estimate);
+
+                // Calculate median
+                const mid = Math.floor(estimates.length / 2);
+                const median = estimates.length % 2 === 0
+                    ? Math.round((estimates[mid - 1] + estimates[mid]) / 2)
+                    : estimates[mid];
+
+                // Calculate trimmed mean for 5+ results
+                let bestEstimate = median;
+                if (estimates.length > 4) {
+                    const trimCount = Math.max(1, Math.floor(estimates.length * 0.125));
+                    const trimmed = estimates.slice(trimCount, estimates.length - trimCount);
+                    const trimmedMean = Math.round(trimmed.reduce((a, b) => a + b, 0) / trimmed.length);
+                    bestEstimate = Math.min(median, trimmedMean);
+                }
+
+                // Auto-apply: ARV = bestEstimate, As-Is = 90% of ARV, Sqft from property data
+                onApplyEstimate(bestEstimate, Math.round(bestEstimate * 0.9), data.propertyData?.sqft);
+            }
         } catch (err) {
             setError(err instanceof Error ? err.message : 'Failed to fetch AVM data');
             setResults([]);
@@ -170,7 +194,7 @@ const AVMPanel = forwardRef<AVMPanelRef, AVMPanelProps>(({ address, onApplyEstim
             {isLoading && (
                 <div className="mt-4">
                     <div className="flex items-center justify-between text-xs text-slate-400 mb-1">
-                        <span>Fetching from {24} sources...</span>
+                        <span>Fetching from 7 sources...</span>
                         <span>{Math.round(loadingProgress)}%</span>
                     </div>
                     <div className="h-2 bg-slate-700 rounded-full overflow-hidden">
