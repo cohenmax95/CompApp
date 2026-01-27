@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useImperativeHandle, forwardRef } from 'react';
 import { AVMResult, AVMFetchResult, formatAVMCurrency, PropertyData } from '@/lib/avm';
 
 interface AVMPanelProps {
@@ -8,7 +8,11 @@ interface AVMPanelProps {
     onApplyEstimate: (arv: number, asIsValue: number, sqft?: number) => void;
 }
 
-export default function AVMPanel({ address, onApplyEstimate }: AVMPanelProps) {
+export interface AVMPanelRef {
+    fetchAVMs: () => void;
+}
+
+const AVMPanel = forwardRef<AVMPanelRef, AVMPanelProps>(({ address, onApplyEstimate }, ref) => {
     const [results, setResults] = useState<AVMResult[]>([]);
     const [propertyData, setPropertyData] = useState<PropertyData | null>(null);
     const [isLoading, setIsLoading] = useState(false);
@@ -38,6 +42,11 @@ export default function AVMPanel({ address, onApplyEstimate }: AVMPanelProps) {
             return () => clearTimeout(timeout);
         }
     }, [isLoading]);
+
+    // Expose fetchAVMs to parent via ref
+    useImperativeHandle(ref, () => ({
+        fetchAVMs
+    }));
 
     const fetchAVMs = async () => {
         if (!address.trim()) {
@@ -278,4 +287,7 @@ export default function AVMPanel({ address, onApplyEstimate }: AVMPanelProps) {
             )}
         </div>
     );
-}
+});
+
+AVMPanel.displayName = 'AVMPanel';
+export default AVMPanel;

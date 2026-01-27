@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import {
     OfferInputs,
     OfferSettings,
@@ -12,7 +12,7 @@ import {
 import SettingsPanel from '@/components/SettingsPanel';
 import PropertyInput from '@/components/PropertyInput';
 import OfferResultsDisplay from '@/components/OfferResults';
-import AVMPanel from '@/components/AVMPanel';
+import AVMPanel, { AVMPanelRef } from '@/components/AVMPanel';
 
 interface AppState {
     settings: OfferSettings;
