@@ -59,6 +59,7 @@ export default function Home() {
     }, []);
 
     // Apply AVM estimates to inputs (including sqft from property data)
+    // Also resets repair estimate to avoid stale data from previous properties
     const handleApplyAVMEstimate = (arv: number, asIsValue: number, sqftFromAVM?: number) => {
         setState((s) => ({
             ...s,
@@ -66,9 +67,10 @@ export default function Home() {
                 ...s.inputs,
                 arv,
                 asIsValue,
+                repairEstimate: 0, // Reset to prompt user to select new repair level
             },
-            // Auto-fill sqft if provided from AVM and not already set
-            sqft: sqftFromAVM && s.sqft === 0 ? sqftFromAVM : s.sqft,
+            // Always update sqft from AVM data if provided
+            sqft: sqftFromAVM || s.sqft,
         }));
     };
 
