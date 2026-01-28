@@ -203,6 +203,31 @@ const AVMPanel = forwardRef<AVMPanelRef, AVMPanelProps>(({ address, onApplyEstim
                             style={{ width: `${loadingProgress}%` }}
                         />
                     </div>
+
+                    {/* Skeleton Preview */}
+                    <div className="mt-4 space-y-3">
+                        {/* Skeleton Best Estimate Card */}
+                        <div className="p-4 rounded-xl bg-slate-800/50 border border-slate-700/50">
+                            <div className="flex items-center justify-between gap-4">
+                                <div className="flex-1">
+                                    <div className="skeleton skeleton-text w-24 h-3 mb-2"></div>
+                                    <div className="skeleton skeleton-text w-32 h-8 mb-1"></div>
+                                    <div className="skeleton skeleton-text w-40 h-3"></div>
+                                </div>
+                                <div className="skeleton w-24 h-10 rounded-xl"></div>
+                            </div>
+                        </div>
+
+                        {/* Skeleton Source Rows */}
+                        <div className="space-y-2">
+                            {[1, 2, 3].map(i => (
+                                <div key={i} className="p-3 rounded-lg bg-slate-800/30 flex items-center justify-between">
+                                    <div className="skeleton skeleton-text w-20 h-4"></div>
+                                    <div className="skeleton skeleton-text w-24 h-5"></div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
                 </div>
             )}
 
