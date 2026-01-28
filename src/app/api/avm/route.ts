@@ -142,18 +142,22 @@ async function fetchRentCast(address: string): Promise<{
 
         if (valueData.price || valueData.priceHigh) {
             const estimate = valueData.price || Math.round((valueData.priceLow + valueData.priceHigh) / 2);
+
+            // Property details are in subjectProperty nested object
+            const subject = valueData.subjectProperty || {};
+
             return {
                 estimate,
-                low: valueData.priceLow || Math.round(estimate * 0.95),
-                high: valueData.priceHigh || Math.round(estimate * 1.05),
+                low: valueData.priceRangeLow || Math.round(estimate * 0.95),
+                high: valueData.priceRangeHigh || Math.round(estimate * 1.05),
                 rentEstimate,
                 url: `https://app.rentcast.io/app?address=${encodeURIComponent(address)}`,
                 propertyData: {
-                    sqft: valueData.squareFootage || 0,
-                    beds: valueData.bedrooms || 0,
-                    baths: valueData.bathrooms || 0,
-                    yearBuilt: valueData.yearBuilt || 0,
-                    lotSize: valueData.lotSize || 0,
+                    sqft: subject.squareFootage || 0,
+                    beds: subject.bedrooms || 0,
+                    baths: subject.bathrooms || 0,
+                    yearBuilt: subject.yearBuilt || 0,
+                    lotSize: subject.lotSize || 0,
                 },
             };
         }
