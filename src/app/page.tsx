@@ -326,7 +326,12 @@ Best Offer: ${formatCurrency(results.bestOffer.offerPrice)} (${results.bestStrat
 
                     {/* Right Column - Results */}
                     <div className="lg:col-span-2">
-                        <OfferResultsDisplay results={results} hasInputs={hasInputs} />
+                        <OfferResultsDisplay
+                            results={results}
+                            hasInputs={hasInputs}
+                            arv={state.inputs.arv}
+                            repairEstimate={state.inputs.repairEstimate}
+                        />
                     </div>
                 </div>
             </div>
