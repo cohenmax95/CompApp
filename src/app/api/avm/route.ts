@@ -630,60 +630,53 @@ async function scrapeNARRPR(address: string): Promise<{
                 pricePerSqft: number;
             }> = [];
 
-            // Try to find table rows with comp data
-            const rows = document.querySelectorAll('table tbody tr, .comp-row, [class*="comp"], [class*="result-row"]');
+            // NARRPR shows comps with pattern:
+            // Address line: "4760 NW 73rd Ave, Lauderhill, FL 33319"
+            // Data line: ".13 Mi. 72 days 11/5/2025 $530,000 $241 2,199 4 3 1987"
 
-            rows.forEach(row => {
-                const text = row.textContent || '';
-                const cells = row.querySelectorAll('td, .cell, span');
+            const pageText = document.body.innerText;
 
-                // Extract address - look for street number + name pattern
-                const addressMatch = text.match(/(\d+\s+[A-Za-z0-9\s]+(?:St|Ave|Rd|Dr|Ln|Ct|Way|Blvd|Circle|Terr?|Pl)[^,\d]*)/i);
+            // Look for "Closed" properties (sold comps)
+            // Pattern matches: Address, then later in same block: distance, date, price, $/sqft, sqft, beds, baths, year
+            const closedPattern = /(\d+\s+(?:NW|NE|SW|SE|N|S|E|W)?\s*\d*[A-Za-z\s]+(?:St|Ave|Rd|Dr|Ln|Ct|Way|Blvd|Ter|Cir|Pl)[^,]*,\s*[A-Za-z\s]+,\s*FL\s*\d{5})[^\$]*?(\.\d+\s*Mi\.?)[^\$]*?(\d{1,2}\/\d{1,2}\/\d{4})[^\$]*?\$([,\d]+)\s*(?:Closed\s*Price)?\s*\$(\d+)\s*([,\d]+)\s*(\d+)\s*(\d+)\s*(\d{4})/gi;
 
-                // Extract price - look for dollar amounts
-                const priceMatch = text.match(/\$\s*([\d,]+)/);
+            let match;
+            while ((match = closedPattern.exec(pageText)) !== null && comps.length < 20) {
+                const address = match[1].trim();
+                const distance = match[2].trim();
+                const soldDate = match[3];
+                const price = parseInt(match[4].replace(/,/g, ''));
+                const pricePerSqft = parseInt(match[5]);
+                const sqft = parseInt(match[6].replace(/,/g, ''));
+                const beds = parseInt(match[7]);
+                const baths = parseInt(match[8]);
 
-                // Extract sqft
-                const sqftMatch = text.match(/([\d,]+)\s*(?:sq\.?\s*ft|SF)/i);
-
-                // Extract beds/baths
-                const bedsMatch = text.match(/(\d+)\s*(?:bed|br)/i);
-                const bathsMatch = text.match(/([\d.]+)\s*(?:bath|ba)/i);
-
-                // Extract sold date
-                const dateMatch = text.match(/(\d{1,2}\/\d{1,2}\/\d{2,4})/);
-
-                // Extract distance
-                const distMatch = text.match(/([\d.]+)\s*mi/i);
-
-                if (addressMatch && priceMatch) {
-                    const price = parseInt(priceMatch[1].replace(/,/g, ''));
-                    const sqft = sqftMatch ? parseInt(sqftMatch[1].replace(/,/g, '')) : 0;
-
-                    if (price > 50000 && price < 10000000) {
-                        comps.push({
-                            address: addressMatch[1].trim(),
-                            price,
-                            sqft,
-                            beds: bedsMatch ? parseInt(bedsMatch[1]) : 0,
-                            baths: bathsMatch ? parseFloat(bathsMatch[1]) : 0,
-                            soldDate: dateMatch ? dateMatch[1] : 'Recent',
-                            distance: distMatch ? `${distMatch[1]} mi` : '',
-                            pricePerSqft: sqft > 0 ? Math.round(price / sqft) : 0,
-                        });
-                    }
+                if (price > 50000 && price < 10000000 && !comps.some(c => c.address === address)) {
+                    comps.push({
+                        address,
+                        price,
+                        sqft,
+                        beds,
+                        baths,
+                        soldDate,
+                        distance,
+                        pricePerSqft,
+                    });
                 }
-            });
+            }
 
-            // Also try extracting from page text if table extraction fails
+            // Fallback: simpler pattern for addresses with prices
             if (comps.length === 0) {
-                const pageText = document.body.innerText;
-                const patterns = pageText.matchAll(/(\d+\s+[A-Za-z0-9\s]+(?:St|Ave|Rd|Dr|Ln|Ct|Way|Blvd)[^$]*)\$\s*([\d,]+)/gi);
-                for (const match of patterns) {
+                // Try to find any address + price pattern
+                const simplePattern = /(\d+\s+[A-Za-z0-9\s]+(?:St|Ave|Rd|Dr|Ln|Ct|Way|Blvd|Ter|Cir)[^,]*,\s*[A-Za-z]+,\s*FL\s*\d{5})[^$]*?\$([,\d]+)/gi;
+
+                while ((match = simplePattern.exec(pageText)) !== null && comps.length < 15) {
+                    const address = match[1].trim();
                     const price = parseInt(match[2].replace(/,/g, ''));
-                    if (price > 50000 && price < 5000000) {
+
+                    if (price > 50000 && price < 5000000 && !comps.some(c => c.address === address)) {
                         comps.push({
-                            address: match[1].trim().slice(0, 100),
+                            address,
                             price,
                             sqft: 0,
                             beds: 0,
@@ -693,7 +686,6 @@ async function scrapeNARRPR(address: string): Promise<{
                             pricePerSqft: 0,
                         });
                     }
-                    if (comps.length >= 15) break;
                 }
             }
 
