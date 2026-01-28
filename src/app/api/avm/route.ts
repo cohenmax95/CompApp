@@ -168,6 +168,51 @@ async function withTimeout<T>(
 const SCRAPER_TIMEOUT = 30000;
 
 // ============================================
+// SCRAPER LOGGER - Detailed step-by-step timing for debugging
+// ============================================
+class ScraperLogger {
+    private name: string;
+    private startTime: number;
+    private lastStepTime: number;
+    private stepCount: number;
+
+    constructor(scraperName: string) {
+        this.name = scraperName;
+        this.startTime = Date.now();
+        this.lastStepTime = this.startTime;
+        this.stepCount = 0;
+        this.log('START', `Beginning scrape`);
+    }
+
+    log(step: string, message: string, data?: Record<string, unknown>) {
+        this.stepCount++;
+        const now = Date.now();
+        const totalElapsed = ((now - this.startTime) / 1000).toFixed(2);
+        const stepElapsed = ((now - this.lastStepTime) / 1000).toFixed(2);
+        this.lastStepTime = now;
+
+        const dataStr = data ? ` | ${JSON.stringify(data)}` : '';
+        console.log(`[${this.name}] [${totalElapsed}s total, +${stepElapsed}s] Step ${this.stepCount}: ${step} - ${message}${dataStr}`);
+    }
+
+    error(step: string, error: unknown) {
+        const now = Date.now();
+        const totalElapsed = ((now - this.startTime) / 1000).toFixed(2);
+        const errorMsg = error instanceof Error ? error.message : String(error);
+        console.error(`[${this.name}] [${totalElapsed}s] ERROR at ${step}: ${errorMsg}`);
+    }
+
+    finish(success: boolean, result?: { estimate?: number }) {
+        const totalElapsed = ((Date.now() - this.startTime) / 1000).toFixed(2);
+        if (success && result?.estimate) {
+            console.log(`[${this.name}] [${totalElapsed}s] ✓ SUCCESS - Found estimate: $${result.estimate.toLocaleString()}`);
+        } else {
+            console.log(`[${this.name}] [${totalElapsed}s] ✗ FAILED - No estimate found after ${this.stepCount} steps`);
+        }
+    }
+}
+
+// ============================================
 // RENTCAST API - Direct API integration (no scraping!)
 // Provides property value estimates and rent estimates
 // Docs: https://developers.rentcast.io/reference/value-estimate
@@ -307,64 +352,82 @@ async function scrapeZillow(address: string): Promise<{
     url: string;
     propertyData?: Partial<PropertyData>;
 } | null> {
+    const log = new ScraperLogger('Zillow');
     let browser: Browser | null = null;
+
     try {
+        log.log('BROWSER', 'Creating stealth browser');
         browser = await createStealthBrowser();
+
+        log.log('PAGE', 'Creating new page');
         const page = await browser.newPage();
+
+        log.log('CONFIG', 'Configuring page (user agent, headers)');
         await configurePage(page);
 
         const searchUrl = `https://www.zillow.com/homes/${encodeURIComponent(address)}_rb/`;
-        console.log('[Zillow] Starting scrape for:', address);
-        console.log('[Zillow] URL:', searchUrl);
+        log.log('NAVIGATE', `Going to URL: ${searchUrl}`);
 
         // Navigate and capture response status
         const response = await page.goto(searchUrl, { waitUntil: 'networkidle2', timeout: 25000 });
         const status = response?.status() || 0;
-        console.log('[Zillow] HTTP Status:', status);
+        log.log('RESPONSE', `HTTP Status received`, { status });
 
         // Check for Cloudflare or bot detection
         const pageTitle = await page.title();
-        console.log('[Zillow] Page title:', pageTitle);
+        const pageUrl = page.url();
+        log.log('PAGE_INFO', `Page loaded`, { title: pageTitle, finalUrl: pageUrl });
 
-        if (status === 403 || status === 503 || pageTitle.toLowerCase().includes('access denied') || pageTitle.toLowerCase().includes('just a moment')) {
-            console.error('[Zillow] BLOCKED - Bot detection triggered. Status:', status, 'Title:', pageTitle);
+        if (status === 403 || status === 503) {
+            log.log('BLOCKED', `Bot detection - HTTP ${status}`, { status, title: pageTitle });
             await browser.close();
+            log.finish(false);
             return { url: searchUrl };
         }
 
+        if (pageTitle.toLowerCase().includes('access denied') || pageTitle.toLowerCase().includes('just a moment')) {
+            log.log('BLOCKED', `Cloudflare challenge detected`, { title: pageTitle });
+            await browser.close();
+            log.finish(false);
+            return { url: searchUrl };
+        }
+
+        log.log('WAIT', 'Waiting 2s for dynamic content');
         await new Promise(r => setTimeout(r, 2000));
 
-        // Check for CAPTCHA and solve if needed
-        const hasCaptcha = await page.evaluate(() => {
-            return document.querySelector('.captcha-container, .g-recaptcha, [data-sitekey]') !== null;
+        // Check for CAPTCHA
+        log.log('CAPTCHA_CHECK', 'Checking for CAPTCHA elements');
+        const captchaInfo = await page.evaluate(() => {
+            const hasCaptcha = document.querySelector('.captcha-container, .g-recaptcha, [data-sitekey]') !== null;
+            const siteKey = document.querySelector('[data-sitekey]')?.getAttribute('data-sitekey') || '';
+            return { hasCaptcha, siteKey };
         });
+        log.log('CAPTCHA_RESULT', `CAPTCHA check complete`, captchaInfo);
 
-        if (hasCaptcha) {
-            console.log('CAPTCHA detected on Zillow, solving...');
-            const siteKey = await page.evaluate(() => {
-                const el = document.querySelector('[data-sitekey]');
-                return el?.getAttribute('data-sitekey') || '';
-            });
-
-            if (siteKey) {
-                const token = await solveCaptcha(siteKey, searchUrl);
-                if (token) {
-                    await page.evaluate((t) => {
-                        const textarea = document.getElementById('g-recaptcha-response') as HTMLTextAreaElement;
-                        if (textarea) textarea.value = t;
-                    }, token);
-                    await new Promise(r => setTimeout(r, 1000));
-                }
+        if (captchaInfo.hasCaptcha && captchaInfo.siteKey) {
+            log.log('CAPTCHA_SOLVE', 'Attempting to solve CAPTCHA');
+            const token = await solveCaptcha(captchaInfo.siteKey, searchUrl);
+            if (token) {
+                log.log('CAPTCHA_TOKEN', 'Got CAPTCHA token, injecting');
+                await page.evaluate((t) => {
+                    const textarea = document.getElementById('g-recaptcha-response') as HTMLTextAreaElement;
+                    if (textarea) textarea.value = t;
+                }, token);
+                await new Promise(r => setTimeout(r, 1000));
+            } else {
+                log.log('CAPTCHA_FAIL', 'Failed to get CAPTCHA token');
             }
         }
 
-        // Extract data from __NEXT_DATA__ script tag (confirmed working method)
+        // Extract data from page
+        log.log('EXTRACT', 'Extracting data from page');
         const data = await page.evaluate(() => {
             let estimate = 0;
             let low = 0;
             let high = 0;
             let sqft = 0, beds = 0, baths = 0, yearBuilt = 0, lotSize = 0;
             let scrapedAddress = '';
+            let extractionMethod = 'none';
 
             // Method 1: Parse __NEXT_DATA__ script tag
             const nextDataScript = document.getElementById('__NEXT_DATA__');
@@ -374,7 +437,6 @@ async function scrapeZillow(address: string): Promise<{
                     const gdpData = nextData?.props?.pageProps?.componentProps?.gdpClientCache;
                     if (gdpData) {
                         const cacheData = typeof gdpData === 'string' ? JSON.parse(gdpData) : gdpData;
-                        // Extract from cache structure
                         const entries = Object.values(cacheData) as Array<{
                             property?: {
                                 zestimate?: number; zestimateLowPercent?: number; zestimateHighPercent?: number;
@@ -395,38 +457,35 @@ async function scrapeZillow(address: string): Promise<{
                                 baths = entry.property.bathrooms || 0;
                                 yearBuilt = entry.property.yearBuilt || 0;
                                 lotSize = entry.property.lotSize || 0;
-                                // Extract address for verification
-                                scrapedAddress = entry.property.address?.streetAddress ||
-                                    entry.property.streetAddress || '';
+                                scrapedAddress = entry.property.address?.streetAddress || entry.property.streetAddress || '';
+                                extractionMethod = '__NEXT_DATA__';
                                 break;
                             }
                         }
                     }
                 } catch (e) {
-                    console.log('__NEXT_DATA__ parse error:', e);
+                    // Will fall through to regex method
                 }
             }
 
             // Method 2: Fallback to regex on HTML
             if (estimate === 0) {
                 const html = document.body.innerHTML;
-                const patterns = [
-                    /"zestimate":(\d+)/,
-                    /"price":(\d+)/,
-                ];
+                const patterns = [/\"zestimate\":(\\d+)/, /\"price\":(\\d+)/];
                 for (const pattern of patterns) {
                     const match = html.match(pattern);
                     if (match) {
                         estimate = parseInt(match[1]);
+                        extractionMethod = 'regex';
                         break;
                     }
                 }
-                const sqftMatch = html.match(/"livingArea":(\d+)/);
-                const bedsMatch = html.match(/"bedrooms":(\d+)/);
-                const bathsMatch = html.match(/"bathrooms":([\d.]+)/);
-                const yearMatch = html.match(/"yearBuilt":(\d+)/);
-                const lotMatch = html.match(/"lotSize":(\d+)/);
-                const addrMatch = html.match(/"streetAddress":"([^"]+)"/);
+                const sqftMatch = html.match(/\"livingArea\":(\\d+)/);
+                const bedsMatch = html.match(/\"bedrooms\":(\\d+)/);
+                const bathsMatch = html.match(/\"bathrooms\":([\\d.]+)/);
+                const yearMatch = html.match(/\"yearBuilt\":(\\d+)/);
+                const lotMatch = html.match(/\"lotSize\":(\\d+)/);
+                const addrMatch = html.match(/\"streetAddress\":\"([^\"]+)\"/);
                 sqft = sqftMatch ? parseInt(sqftMatch[1]) : sqft;
                 beds = bedsMatch ? parseInt(bedsMatch[1]) : beds;
                 baths = bathsMatch ? parseFloat(bathsMatch[1]) : baths;
@@ -435,19 +494,27 @@ async function scrapeZillow(address: string): Promise<{
                 scrapedAddress = addrMatch ? addrMatch[1] : scrapedAddress;
             }
 
-            return { estimate, low, high, sqft, beds, baths, yearBuilt, lotSize, scrapedAddress };
+            return { estimate, low, high, sqft, beds, baths, yearBuilt, lotSize, scrapedAddress, extractionMethod };
         });
 
+        log.log('DATA', 'Extraction complete', {
+            estimate: data.estimate,
+            method: data.extractionMethod,
+            scrapedAddress: data.scrapedAddress
+        });
+
+        log.log('CLOSE', 'Closing browser');
         await browser.close();
 
         // Verify address matches before accepting result
         if (data.estimate > 0) {
             if (data.scrapedAddress && !addressesMatch(address, data.scrapedAddress)) {
-                console.log(`Zillow address mismatch: expected "${address}", got "${data.scrapedAddress}"`);
-                return { url: searchUrl }; // Return without estimate
+                log.log('MISMATCH', `Address mismatch`, { expected: address, got: data.scrapedAddress });
+                log.finish(false);
+                return { url: searchUrl };
             }
 
-            return {
+            const result = {
                 estimate: data.estimate,
                 low: data.low || Math.round(data.estimate * 0.93),
                 high: data.high || Math.round(data.estimate * 1.07),
@@ -460,11 +527,14 @@ async function scrapeZillow(address: string): Promise<{
                     lotSize: data.lotSize,
                 },
             };
+            log.finish(true, result);
+            return result;
         }
 
+        log.finish(false);
         return { url: searchUrl };
     } catch (error) {
-        console.error('Zillow scrape error:', error);
+        log.error('EXCEPTION', error);
         if (browser) await browser.close();
         return null;
     }
@@ -480,80 +550,95 @@ async function scrapeRedfin(address: string): Promise<{
     url: string;
     propertyData?: Partial<PropertyData>;
 } | null> {
+    const log = new ScraperLogger('Redfin');
     let browser: Browser | null = null;
+
     try {
+        log.log('BROWSER', 'Creating stealth browser');
         browser = await createStealthBrowser();
+
+        log.log('PAGE', 'Creating new page');
         const page = await browser.newPage();
+
+        log.log('CONFIG', 'Configuring page');
         await configurePage(page);
 
         const searchUrl = `https://www.redfin.com/search?q=${encodeURIComponent(address)}`;
-        console.log('[Redfin] Starting scrape for:', address);
-        console.log('[Redfin] URL:', searchUrl);
+        log.log('NAVIGATE', `Going to URL: ${searchUrl}`);
 
-        // Navigate and capture response status
         const response = await page.goto(searchUrl, { waitUntil: 'networkidle2', timeout: 25000 });
         const status = response?.status() || 0;
-        console.log('[Redfin] HTTP Status:', status);
+        log.log('RESPONSE', `HTTP Status received`, { status });
 
-        // Check for Cloudflare or bot detection
         const pageTitle = await page.title();
-        console.log('[Redfin] Page title:', pageTitle);
+        const pageUrl = page.url();
+        log.log('PAGE_INFO', `Page loaded`, { title: pageTitle, finalUrl: pageUrl });
 
-        if (status === 403 || status === 503 || pageTitle.toLowerCase().includes('access denied') || pageTitle.toLowerCase().includes('just a moment')) {
-            console.error('[Redfin] BLOCKED - Bot detection triggered. Status:', status, 'Title:', pageTitle);
+        if (status === 403 || status === 503) {
+            log.log('BLOCKED', `Bot detection - HTTP ${status}`, { status, title: pageTitle });
             await browser.close();
+            log.finish(false);
             return { url: searchUrl };
         }
 
+        if (pageTitle.toLowerCase().includes('access denied') || pageTitle.toLowerCase().includes('just a moment')) {
+            log.log('BLOCKED', `Cloudflare challenge detected`, { title: pageTitle });
+            await browser.close();
+            log.finish(false);
+            return { url: searchUrl };
+        }
+
+        log.log('WAIT', 'Waiting 2s for dynamic content');
         await new Promise(r => setTimeout(r, 2000));
 
-        // Check for CAPTCHA
-        const hasCaptcha = await page.evaluate(() => {
-            return document.body.innerHTML.includes('captcha') ||
+        log.log('CAPTCHA_CHECK', 'Checking for CAPTCHA');
+        const captchaInfo = await page.evaluate(() => {
+            const hasCaptcha = document.body.innerHTML.includes('captcha') ||
                 document.querySelector('.g-recaptcha') !== null;
+            const siteKey = document.querySelector('[data-sitekey]')?.getAttribute('data-sitekey') || '';
+            return { hasCaptcha, siteKey };
         });
+        log.log('CAPTCHA_RESULT', `Check complete`, captchaInfo);
 
-        if (hasCaptcha) {
-            console.log('CAPTCHA detected on Redfin');
-            const siteKey = await page.evaluate(() => {
-                const el = document.querySelector('[data-sitekey]');
-                return el?.getAttribute('data-sitekey') || '';
-            });
-
-            if (siteKey) {
-                const token = await solveCaptcha(siteKey, searchUrl);
-                if (token) {
-                    await page.evaluate((t) => {
-                        const textarea = document.getElementById('g-recaptcha-response') as HTMLTextAreaElement;
-                        if (textarea) textarea.value = t;
-                    }, token);
-                    await new Promise(r => setTimeout(r, 3000));
-                }
+        if (captchaInfo.hasCaptcha && captchaInfo.siteKey) {
+            log.log('CAPTCHA_SOLVE', 'Attempting to solve CAPTCHA');
+            const token = await solveCaptcha(captchaInfo.siteKey, searchUrl);
+            if (token) {
+                log.log('CAPTCHA_TOKEN', 'Got token, injecting');
+                await page.evaluate((t) => {
+                    const textarea = document.getElementById('g-recaptcha-response') as HTMLTextAreaElement;
+                    if (textarea) textarea.value = t;
+                }, token);
+                await new Promise(r => setTimeout(r, 3000));
+            } else {
+                log.log('CAPTCHA_FAIL', 'Failed to get token');
             }
         }
 
-        // Redfin uses reactServerState in a custom script tag
+        log.log('EXTRACT', 'Extracting data from page');
         const data = await page.evaluate(() => {
             const html = document.body.innerHTML;
             let estimate = 0;
             let sqft = 0, beds = 0, baths = 0, yearBuilt = 0;
+            let extractionMethod = 'none';
 
-            // Method 1: Look for reactServerState script with avm data
+            // Method 1: Look for reactServerState script
             const scripts = Array.from(document.querySelectorAll('script'));
             for (const script of scripts) {
                 const content = script.textContent || '';
                 if (content.includes('reactServerState') && content.includes('avm')) {
-                    // Extract predictedValue from the nested structure
                     const avmMatch = content.match(/"avm":\s*\{[^}]*"predictedValue"\s*:\s*(\d+)/);
                     if (avmMatch) {
                         estimate = parseInt(avmMatch[1]);
+                        extractionMethod = 'reactServerState';
                     }
-                    // Alternative pattern
                     if (estimate === 0) {
                         const altMatch = content.match(/"predictedValue"\s*:\s*(\d+)/);
-                        if (altMatch) estimate = parseInt(altMatch[1]);
+                        if (altMatch) {
+                            estimate = parseInt(altMatch[1]);
+                            extractionMethod = 'predictedValue';
+                        }
                     }
-                    // Property details
                     const sqftMatch = content.match(/"sqFt"\s*:\s*\{[^}]*"value"\s*:\s*(\d+)/);
                     const bedsMatch = content.match(/"beds"\s*:\s*(\d+)/);
                     const bathsMatch = content.match(/"baths"\s*:\s*([\d.]+)/);
@@ -566,49 +651,44 @@ async function scrapeRedfin(address: string): Promise<{
                 }
             }
 
-            // Method 2: Fallback to simple regex patterns
+            // Method 2: Fallback to regex
             if (estimate === 0) {
-                const patterns = [
-                    /"predictedValue":(\d+)/,
-                    /"avm":\{"price":\{"value":(\d+)/,
-                    /Redfin Estimate[^$]*\$([0-9,]+)/i,
-                ];
+                const patterns = [/"predictedValue":(\d+)/, /"avm":\{"price":\{"value":(\d+)/, /Redfin Estimate[^$]*\$([0-9,]+)/i];
                 for (const pattern of patterns) {
                     const match = html.match(pattern);
                     if (match) {
                         estimate = parseInt(match[1].replace(/,/g, ''));
+                        extractionMethod = 'regex';
                         break;
                     }
                 }
-                const sqftMatch = html.match(/"sqFt":\{"value":(\d+)/) || html.match(/"sqft":(\d+)/);
-                const bedsMatch = html.match(/"beds":(\d+)/);
-                const bathsMatch = html.match(/"baths":([\d.]+)/);
-                const yearMatch = html.match(/"yearBuilt":\{"value":(\d+)/) || html.match(/"yearBuilt":(\d+)/);
-                sqft = sqftMatch ? parseInt(sqftMatch[1]) : sqft;
-                beds = bedsMatch ? parseInt(bedsMatch[1]) : beds;
-                baths = bathsMatch ? parseFloat(bathsMatch[1]) : baths;
-                yearBuilt = yearMatch ? parseInt(yearMatch[1]) : yearBuilt;
             }
 
-            // Extract address for verification
             const addrMatch = html.match(/"streetAddress":\s*\{[^}]*"value"\s*:\s*"([^"]+)"/) ||
                 html.match(/"streetAddress"\s*:\s*"([^"]+)"/) ||
                 html.match(/"address"\s*:\s*"([^"]+)"/);
             const scrapedAddress = addrMatch ? addrMatch[1] : '';
 
-            return { estimate, sqft, beds, baths, yearBuilt, scrapedAddress };
+            return { estimate, sqft, beds, baths, yearBuilt, scrapedAddress, extractionMethod };
         });
 
+        log.log('DATA', 'Extraction complete', {
+            estimate: data.estimate,
+            method: data.extractionMethod,
+            scrapedAddress: data.scrapedAddress
+        });
+
+        log.log('CLOSE', 'Closing browser');
         await browser.close();
 
-        // Verify address matches before accepting result
         if (data.estimate > 0) {
             if (data.scrapedAddress && !addressesMatch(address, data.scrapedAddress)) {
-                console.log(`Redfin address mismatch: expected "${address}", got "${data.scrapedAddress}"`);
+                log.log('MISMATCH', `Address mismatch`, { expected: address, got: data.scrapedAddress });
+                log.finish(false);
                 return { url: searchUrl };
             }
 
-            return {
+            const result = {
                 estimate: data.estimate,
                 low: Math.round(data.estimate * 0.95),
                 high: Math.round(data.estimate * 1.05),
@@ -621,11 +701,14 @@ async function scrapeRedfin(address: string): Promise<{
                     lotSize: 0,
                 },
             };
+            log.finish(true, result);
+            return result;
         }
 
+        log.finish(false);
         return { url: searchUrl };
     } catch (error) {
-        console.error('Redfin scrape error:', error);
+        log.error('EXCEPTION', error);
         if (browser) await browser.close();
         return null;
     }
@@ -641,33 +724,52 @@ async function scrapeRealtor(address: string): Promise<{
     url: string;
     propertyData?: Partial<PropertyData>;
 } | null> {
+    const log = new ScraperLogger('Realtor');
     let browser: Browser | null = null;
+
     try {
+        log.log('BROWSER', 'Creating stealth browser');
         browser = await createStealthBrowser();
+
+        log.log('PAGE', 'Creating new page');
         const page = await browser.newPage();
+
+        log.log('CONFIG', 'Configuring page');
         await configurePage(page);
 
         const slug = address.replace(/[,\s]+/g, '-').replace(/--+/g, '-');
         const searchUrl = `https://www.realtor.com/realestateandhomes-search/${encodeURIComponent(slug)}`;
-        console.log('Realtor URL:', searchUrl);
+        log.log('NAVIGATE', `Going to URL: ${searchUrl}`);
 
-        await page.goto(searchUrl, { waitUntil: 'networkidle2', timeout: 30000 });
+        const response = await page.goto(searchUrl, { waitUntil: 'networkidle2', timeout: 25000 });
+        const status = response?.status() || 0;
+        log.log('RESPONSE', `HTTP Status received`, { status });
+
+        const pageTitle = await page.title();
+        log.log('PAGE_INFO', `Page loaded`, { title: pageTitle });
+
+        if (status === 403 || status === 503 || pageTitle.toLowerCase().includes('access denied')) {
+            log.log('BLOCKED', `Bot detection triggered`, { status, title: pageTitle });
+            await browser.close();
+            log.finish(false);
+            return { url: searchUrl };
+        }
+
+        log.log('WAIT', 'Waiting 2s for dynamic content');
         await new Promise(r => setTimeout(r, 2000));
 
+        log.log('EXTRACT', 'Extracting data from page');
         const data = await page.evaluate(() => {
             const html = document.body.innerHTML;
-
             let estimate = 0;
-            const patterns = [
-                /"estimate":\{"value":(\d+)/,
-                /"list_price":(\d+)/,
-                /"price":(\d+)/,
-            ];
+            let extractionMethod = 'none';
 
+            const patterns = [/"estimate":\{"value":(\d+)/, /"list_price":(\d+)/, /"price":(\d+)/];
             for (const pattern of patterns) {
                 const match = html.match(pattern);
                 if (match) {
                     estimate = parseInt(match[1]);
+                    extractionMethod = 'regex';
                     break;
                 }
             }
@@ -685,36 +787,36 @@ async function scrapeRealtor(address: string): Promise<{
                 baths: bathsMatch ? parseFloat(bathsMatch[1]) : 0,
                 yearBuilt: yearMatch ? parseInt(yearMatch[1]) : 0,
                 scrapedAddress: addrMatch ? addrMatch[1] : '',
+                extractionMethod,
             };
         });
 
+        log.log('DATA', 'Extraction complete', { estimate: data.estimate, method: data.extractionMethod });
+        log.log('CLOSE', 'Closing browser');
         await browser.close();
 
-        // Verify address matches before accepting result
         if (data.estimate > 0) {
             if (data.scrapedAddress && !addressesMatch(address, data.scrapedAddress)) {
-                console.log(`Realtor address mismatch: expected "${address}", got "${data.scrapedAddress}"`);
+                log.log('MISMATCH', `Address mismatch`, { expected: address, got: data.scrapedAddress });
+                log.finish(false);
                 return { url: searchUrl };
             }
 
-            return {
+            const result = {
                 estimate: data.estimate,
                 low: Math.round(data.estimate * 0.94),
                 high: Math.round(data.estimate * 1.06),
                 url: searchUrl,
-                propertyData: {
-                    sqft: data.sqft,
-                    beds: data.beds,
-                    baths: data.baths,
-                    yearBuilt: data.yearBuilt,
-                    lotSize: 0,
-                },
+                propertyData: { sqft: data.sqft, beds: data.beds, baths: data.baths, yearBuilt: data.yearBuilt, lotSize: 0 },
             };
+            log.finish(true, result);
+            return result;
         }
 
+        log.finish(false);
         return { url: searchUrl };
     } catch (error) {
-        console.error('Realtor scrape error:', error);
+        log.error('EXCEPTION', error);
         if (browser) await browser.close();
         return null;
     }
@@ -730,18 +832,24 @@ async function scrapeTrulia(address: string): Promise<{
     url: string;
     propertyData?: Partial<PropertyData>;
 } | null> {
+    const log = new ScraperLogger('Trulia');
     let browser: Browser | null = null;
     try {
+        log.log('BROWSER', 'Creating stealth browser');
         browser = await createStealthBrowser();
         const page = await browser.newPage();
+        log.log('CONFIG', 'Configuring page');
         await configurePage(page);
 
         const slug = address.replace(/[,\s]+/g, '-').replace(/--+/g, '-');
         const searchUrl = `https://www.trulia.com/home-values/${encodeURIComponent(slug)}/`;
-        console.log('Trulia URL:', searchUrl);
+        log.log('NAVIGATE', `Going to: ${searchUrl}`);
 
-        await page.goto(searchUrl, { waitUntil: 'networkidle2', timeout: 30000 });
+        const response = await page.goto(searchUrl, { waitUntil: 'networkidle2', timeout: 25000 });
+        log.log('RESPONSE', `HTTP ${response?.status() || 0}`, { status: response?.status() });
+        log.log('PAGE_INFO', `Title: ${await page.title()}`);
         await new Promise(r => setTimeout(r, 2000));
+        log.log('EXTRACT', 'Extracting data');
 
         const data = await page.evaluate(() => {
             const html = document.body.innerHTML;
@@ -761,27 +869,31 @@ async function scrapeTrulia(address: string): Promise<{
             };
         });
 
+        log.log('DATA', 'Extraction complete', { estimate: data.estimate });
+        log.log('CLOSE', 'Closing browser');
         await browser.close();
 
-        // Verify address matches before accepting result
         if (data.estimate > 0) {
             if (data.scrapedAddress && !addressesMatch(address, data.scrapedAddress)) {
-                console.log(`Trulia address mismatch: expected "${address}", got "${data.scrapedAddress}"`);
+                log.log('MISMATCH', 'Address mismatch', { expected: address, got: data.scrapedAddress });
+                log.finish(false);
                 return { url: searchUrl };
             }
-
-            return {
+            const result = {
                 estimate: data.estimate,
                 low: Math.round(data.estimate * 0.93),
                 high: Math.round(data.estimate * 1.07),
                 url: searchUrl,
                 propertyData: { sqft: data.sqft, beds: data.beds, baths: data.baths, yearBuilt: 0, lotSize: 0 },
             };
+            log.finish(true, result);
+            return result;
         }
 
+        log.finish(false);
         return { url: searchUrl };
     } catch (error) {
-        console.error('Trulia scrape error:', error);
+        log.error('EXCEPTION', error);
         if (browser) await browser.close();
         return null;
     }
@@ -797,23 +909,31 @@ async function scrapeComeHome(address: string): Promise<{
     url: string;
     propertyData?: Partial<PropertyData>;
 } | null> {
+    const log = new ScraperLogger('ComeHome');
     let browser: Browser | null = null;
     try {
+        log.log('BROWSER', 'Creating stealth browser');
         browser = await createStealthBrowser();
         const page = await browser.newPage();
+        log.log('CONFIG', 'Configuring page');
         await configurePage(page);
 
-        // ComeHome is HouseCanary's consumer-facing AVM tool
         const searchUrl = `https://www.comehome.com/`;
-        await page.goto(searchUrl, { waitUntil: 'networkidle2', timeout: 30000 });
+        log.log('NAVIGATE', `Going to: ${searchUrl}`);
+        const response = await page.goto(searchUrl, { waitUntil: 'networkidle2', timeout: 25000 });
+        log.log('RESPONSE', `HTTP ${response?.status() || 0}`);
 
-        // Search for the address
+        log.log('SEARCH', 'Looking for search input');
         const searchInput = await page.$('input[type="text"], input[placeholder*="address"], input[name="search"]');
         if (searchInput) {
+            log.log('TYPE', 'Typing address');
             await searchInput.type(address, { delay: 30 });
             await new Promise(r => setTimeout(r, 1500));
+            log.log('SUBMIT', 'Pressing Enter');
             await page.keyboard.press('Enter');
             await new Promise(r => setTimeout(r, 3000));
+        } else {
+            log.log('NO_INPUT', 'Search input not found');
         }
 
         // Wait for results and extract data
@@ -860,27 +980,26 @@ async function scrapeComeHome(address: string): Promise<{
             };
         });
 
+        log.log('DATA', 'Extraction complete', { estimate: data.estimate });
+        log.log('CLOSE', 'Closing browser');
         await browser.close();
 
         if (data.estimate > 0) {
-            return {
+            const result = {
                 estimate: data.estimate,
                 low: data.low || Math.round(data.estimate * 0.94),
                 high: data.high || Math.round(data.estimate * 1.06),
                 url: searchUrl,
-                propertyData: {
-                    sqft: data.sqft,
-                    beds: data.beds,
-                    baths: data.baths,
-                    yearBuilt: data.yearBuilt,
-                    lotSize: 0,
-                },
+                propertyData: { sqft: data.sqft, beds: data.beds, baths: data.baths, yearBuilt: data.yearBuilt, lotSize: 0 },
             };
+            log.finish(true, result);
+            return result;
         }
 
+        log.finish(false);
         return { url: searchUrl };
     } catch (error) {
-        console.error('ComeHome scrape error:', error);
+        log.error('EXCEPTION', error);
         if (browser) await browser.close();
         return null;
     }
@@ -896,36 +1015,47 @@ async function scrapeBankOfAmerica(address: string): Promise<{
     url: string;
     propertyData?: Partial<PropertyData>;
 } | null> {
+    const log = new ScraperLogger('BofA');
     let browser: Browser | null = null;
     try {
+        log.log('BROWSER', 'Creating stealth browser');
         browser = await createStealthBrowser();
         const page = await browser.newPage();
+        log.log('CONFIG', 'Configuring page');
         await configurePage(page);
 
         const searchUrl = `https://homevaluerealestatecenter.bankofamerica.com/`;
-        console.log('BankOfAmerica URL:', searchUrl);
+        log.log('NAVIGATE', `Going to: ${searchUrl}`);
 
-        await page.goto(searchUrl, { waitUntil: 'networkidle2', timeout: 30000 });
+        const response = await page.goto(searchUrl, { waitUntil: 'networkidle2', timeout: 25000 });
+        log.log('RESPONSE', `HTTP ${response?.status() || 0}`);
+        log.log('PAGE_INFO', `Title: ${await page.title()}`);
         await new Promise(r => setTimeout(r, 2000));
 
-        // Find and fill the address input
+        log.log('SEARCH', 'Looking for address input');
         const addressInput = await page.$('input[type="text"], input[placeholder*="address"], input[name*="address"], #address, .address-search input');
         if (addressInput) {
+            log.log('TYPE', 'Typing address');
             await addressInput.click();
             await addressInput.type(address, { delay: 50 });
             await new Promise(r => setTimeout(r, 2000));
 
-            // Wait for autocomplete suggestions and select first one
+            log.log('AUTOCOMPLETE', 'Looking for suggestions');
             const suggestion = await page.$('.pac-item, .autocomplete-suggestion, [role="option"]');
             if (suggestion) {
+                log.log('SELECT', 'Clicking suggestion');
                 await suggestion.click();
                 await new Promise(r => setTimeout(r, 1500));
             } else {
-                // Press Enter if no suggestions
+                log.log('SUBMIT', 'No suggestions, pressing Enter');
                 await page.keyboard.press('Enter');
             }
             await new Promise(r => setTimeout(r, 3000));
+        } else {
+            log.log('NO_INPUT', 'Address input not found');
         }
+
+        log.log('EXTRACT', 'Extracting data');
 
         // Extract data using the confirmed selector
         const data = await page.evaluate(() => {
@@ -971,28 +1101,27 @@ async function scrapeBankOfAmerica(address: string): Promise<{
             return { estimate, sqft, beds, baths, yearBuilt };
         });
 
+        log.log('DATA', 'Extraction complete', { estimate: data.estimate });
         const finalUrl = page.url();
+        log.log('CLOSE', 'Closing browser');
         await browser.close();
 
         if (data.estimate > 0) {
-            return {
+            const result = {
                 estimate: data.estimate,
                 low: Math.round(data.estimate * 0.95),
                 high: Math.round(data.estimate * 1.05),
                 url: finalUrl,
-                propertyData: {
-                    sqft: data.sqft,
-                    beds: data.beds,
-                    baths: data.baths,
-                    yearBuilt: data.yearBuilt,
-                    lotSize: 0,
-                },
+                propertyData: { sqft: data.sqft, beds: data.beds, baths: data.baths, yearBuilt: data.yearBuilt, lotSize: 0 },
             };
+            log.finish(true, result);
+            return result;
         }
 
+        log.finish(false);
         return { url: finalUrl };
     } catch (error) {
-        console.error('BankOfAmerica scrape error:', error);
+        log.error('EXCEPTION', error);
         if (browser) await browser.close();
         return null;
     }
@@ -1008,34 +1137,48 @@ async function scrapeXome(address: string): Promise<{
     url: string;
     propertyData?: Partial<PropertyData>;
 } | null> {
+    const log = new ScraperLogger('Xome');
     let browser: Browser | null = null;
     try {
+        log.log('BROWSER', 'Creating stealth browser');
         browser = await createStealthBrowser();
         const page = await browser.newPage();
+        log.log('CONFIG', 'Configuring page');
         await configurePage(page);
 
         const searchUrl = `https://www.xome.com/`;
-        console.log('Xome URL:', searchUrl);
+        log.log('NAVIGATE', `Going to: ${searchUrl}`);
 
-        await page.goto(searchUrl, { waitUntil: 'networkidle2', timeout: 30000 });
+        const response = await page.goto(searchUrl, { waitUntil: 'networkidle2', timeout: 25000 });
+        log.log('RESPONSE', `HTTP ${response?.status() || 0}`);
+        log.log('PAGE_INFO', `Title: ${await page.title()}`);
         await new Promise(r => setTimeout(r, 2000));
 
-        // Click on ValueYourHome tab if present
+        log.log('TAB', 'Looking for ValueYourHome tab');
         const valueTab = await page.$('[href*="ValueYourHome"], a:contains("Value"), .value-home');
         if (valueTab) {
+            log.log('TAB_CLICK', 'Clicking value tab');
             await valueTab.click();
             await new Promise(r => setTimeout(r, 1500));
+        } else {
+            log.log('NO_TAB', 'Value tab not found');
         }
 
-        // Find and fill the address input
+        log.log('SEARCH', 'Looking for address input');
         const addressInput = await page.$('input[type="text"], input[placeholder*="address"], input[placeholder*="Enter Address"], .search-input');
         if (addressInput) {
+            log.log('TYPE', 'Typing address');
             await addressInput.click();
             await addressInput.type(address, { delay: 50 });
             await new Promise(r => setTimeout(r, 2000));
+            log.log('SUBMIT', 'Pressing Enter');
             await page.keyboard.press('Enter');
             await new Promise(r => setTimeout(r, 4000));
+        } else {
+            log.log('NO_INPUT', 'Address input not found');
         }
+
+        log.log('EXTRACT', 'Extracting data');
 
         // Extract data using confirmed selectors
         const data = await page.evaluate(() => {
@@ -1095,28 +1238,27 @@ async function scrapeXome(address: string): Promise<{
             return { estimate, low, high, sqft, beds, baths, yearBuilt };
         });
 
+        log.log('DATA', 'Extraction complete', { estimate: data.estimate });
         const finalUrl = page.url();
+        log.log('CLOSE', 'Closing browser');
         await browser.close();
 
         if (data.estimate > 0) {
-            return {
+            const result = {
                 estimate: data.estimate,
                 low: data.low || Math.round(data.estimate * 0.90),
                 high: data.high || Math.round(data.estimate * 1.10),
                 url: finalUrl,
-                propertyData: {
-                    sqft: data.sqft,
-                    beds: data.beds,
-                    baths: data.baths,
-                    yearBuilt: data.yearBuilt,
-                    lotSize: 0,
-                },
+                propertyData: { sqft: data.sqft, beds: data.beds, baths: data.baths, yearBuilt: data.yearBuilt, lotSize: 0 },
             };
+            log.finish(true, result);
+            return result;
         }
 
+        log.finish(false);
         return { url: finalUrl };
     } catch (error) {
-        console.error('Xome scrape error:', error);
+        log.error('EXCEPTION', error);
         if (browser) await browser.close();
         return null;
     }
