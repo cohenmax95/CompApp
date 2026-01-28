@@ -3,44 +3,24 @@
 import { useState } from 'react';
 import { OfferInputs, formatCurrency } from '@/lib/calculations';
 import { REHAB_LEVELS, RehabLevel, calculateRepairEstimate } from '@/lib/avm';
-import AddressAutocomplete from './AddressAutocomplete';
 
 interface PropertyInputProps {
     inputs: OfferInputs;
     onInputsChange: (inputs: OfferInputs) => void;
-    address: string;
-    onAddressChange: (address: string) => void;
     sqft: number;
     onSqftChange: (sqft: number) => void;
-    onFetchAVMs?: () => void;
-    addressHistory?: string[];
-    onSaveToHistory?: (addr: string) => void;
 }
 
 export default function PropertyInput({
     inputs,
     onInputsChange,
-    address,
-    onAddressChange,
     sqft,
     onSqftChange,
-    onFetchAVMs,
-    addressHistory = [],
-    onSaveToHistory,
 }: PropertyInputProps) {
-    const [arvPercent, setArvPercent] = useState(70);
     const [selectedLevel, setSelectedLevel] = useState<RehabLevel>(REHAB_LEVELS[4]);
-    const [showHistory, setShowHistory] = useState(false);
 
     const updateInput = <K extends keyof OfferInputs>(key: K, value: OfferInputs[K]) => {
         onInputsChange({ ...inputs, [key]: value });
-    };
-
-    const formatInputValue = (value: number) => value > 0 ? value.toLocaleString() : '';
-    const formatCurrencyValue = (value: number) => value > 0 ? '$' + value.toLocaleString() : '';
-    const parseInputValue = (value: string) => {
-        const parsed = parseFloat(value.replace(/[^0-9.-]/g, ''));
-        return isNaN(parsed) ? 0 : parsed;
     };
 
     const repairEstimate = sqft > 0 ? calculateRepairEstimate(sqft, selectedLevel) : null;
@@ -49,176 +29,76 @@ export default function PropertyInput({
         updateInput('repairEstimate', amount);
     };
 
-    const calculateMAO = () => {
-        if (inputs.arv <= 0) return 0;
-        return Math.round(inputs.arv * (arvPercent / 100) - inputs.repairEstimate);
-    };
-
-    const handleFetchAVMs = () => {
-        if (address.trim() && onSaveToHistory) {
-            onSaveToHistory(address);
-        }
-        onFetchAVMs?.();
-    };
-
-    const selectFromHistory = (addr: string) => {
-        onAddressChange(addr);
-        setShowHistory(false);
-    };
-
     return (
-        <div className="glass-card p-6">
+        <div className="glass-card p-5">
             {/* Header */}
-            <div className="flex items-center gap-3 mb-6">
-                <div className="w-11 h-11 rounded-2xl bg-gradient-to-br from-[#4CAF50] to-[#2E7D32] flex items-center justify-center flex-shrink-0 shadow-lg shadow-green-500/20">
+            <div className="flex items-center gap-3 mb-5">
+                <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-amber-500 to-orange-600 flex items-center justify-center">
                     <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 12l2-2m0 0l7-7 7 7M5 10v10a1 1 0 001 1h3m10-11l2 2m-2-2v10a1 1 0 01-1 1h-3m-6 0a1 1 0 001-1v-4a1 1 0 011-1h2a1 1 0 011 1v4a1 1 0 001 1m-6 0h6" />
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19.428 15.428a2 2 0 00-1.022-.547l-2.387-.477a6 6 0 00-3.86.517l-.318.158a6 6 0 01-3.86.517L6.05 15.21a2 2 0 00-1.806.547M8 4h8l-1 1v5.172a2 2 0 00.586 1.414l5 5c1.26 1.26.367 3.414-1.415 3.414H4.828c-1.782 0-2.674-2.154-1.414-3.414l5-5A2 2 0 009 10.172V5L8 4z" />
                     </svg>
                 </div>
-                <div className="flex-1">
-                    <h3 className="font-bold text-white text-lg">Property Details</h3>
-                    <p className="text-xs text-slate-500">Enter address, press Enter to fetch</p>
+                <div>
+                    <h3 className="font-bold text-white text-lg">Repair Estimate</h3>
+                    <p className="text-xs text-slate-500">Set sqft and choose repair level</p>
                 </div>
-                {addressHistory.length > 0 && (
-                    <button
-                        onClick={() => setShowHistory(!showHistory)}
-                        className="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 transition-colors"
-                        title="Recent addresses"
-                    >
-                        <svg className="w-5 h-5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                        </svg>
-                    </button>
-                )}
             </div>
 
-            <div className="space-y-5">
-                {/* Recent Addresses Dropdown */}
-                {showHistory && addressHistory.length > 0 && (
-                    <div className="p-3 rounded-xl bg-slate-800/80 border border-slate-700 space-y-1 animate-fade-in">
-                        <p className="text-xs text-slate-500 uppercase tracking-wide mb-2">Recent Addresses</p>
-                        {addressHistory.slice(0, 5).map((addr, i) => (
-                            <button
-                                key={i}
-                                onClick={() => selectFromHistory(addr)}
-                                className="w-full text-left px-3 py-2 rounded-lg text-sm text-slate-300 hover:bg-slate-700 transition-colors truncate"
-                            >
-                                {addr}
-                            </button>
-                        ))}
-                    </div>
-                )}
-
-                {/* Address */}
+            <div className="space-y-4">
+                {/* Sq Ft Input */}
                 <div>
-                    <AddressAutocomplete
-                        value={address}
-                        onChange={onAddressChange}
-                        onEnter={handleFetchAVMs}
-                        placeholder="Enter address, press Enter..."
-                        className="input-field"
-                    />
-                </div>
-
-                {/* ARV - Full Width, Prominent */}
-                <div>
-                    <label className="text-xs text-slate-500 mb-1.5 block uppercase tracking-wide font-medium">After Repair Value (ARV)</label>
+                    <label className="text-xs text-slate-500 mb-1.5 block uppercase tracking-wide font-medium">Square Feet</label>
                     <input
                         type="text"
                         inputMode="numeric"
-                        pattern="[0-9,$]*"
-                        value={formatCurrencyValue(inputs.arv)}
-                        onChange={(e) => updateInput('arv', parseInputValue(e.target.value))}
-                        placeholder="$450,000"
-                        className="input-field text-xl sm:text-2xl font-bold h-12 sm:h-14 bg-slate-800/80"
+                        pattern="[0-9,]*"
+                        value={sqft > 0 ? sqft.toLocaleString() : ''}
+                        onChange={(e) => onSqftChange(parseInt(e.target.value.replace(/[^0-9]/g, '')) || 0)}
+                        placeholder="2,000"
+                        className="input-field font-semibold text-lg"
                     />
-                </div>
-
-                {/* Sq Ft + Condition Row */}
-                <div className="grid grid-cols-5 gap-3">
-                    <div className="col-span-2">
-                        <label className="text-xs text-slate-500 mb-1.5 block uppercase tracking-wide font-medium">Sq Ft</label>
-                        <input
-                            type="text"
-                            inputMode="numeric"
-                            pattern="[0-9,]*"
-                            value={sqft > 0 ? sqft.toLocaleString() : ''}
-                            onChange={(e) => onSqftChange(parseInputValue(e.target.value))}
-                            placeholder="1,500"
-                            className="input-field font-semibold"
-                        />
-                    </div>
-                    <div className="col-span-3">
-                        <label className="text-xs text-slate-500 mb-1.5 block uppercase tracking-wide font-medium">Condition</label>
-                        <select
-                            value={selectedLevel.id}
-                            onChange={(e) => {
-                                const level = REHAB_LEVELS.find(l => l.id === parseInt(e.target.value));
-                                if (level) setSelectedLevel(level);
-                            }}
-                            className="input-field font-semibold"
-                        >
-                            {REHAB_LEVELS.map((level) => (
-                                <option key={level.id} value={level.id}>
-                                    {level.shortLabel} (${level.lowPerSqft}-${level.highPerSqft}/sf)
-                                </option>
-                            ))}
-                        </select>
-                    </div>
                 </div>
 
                 {/* Repair Estimate Buttons */}
                 {repairEstimate && (
-                    <div className="p-4 rounded-2xl bg-gradient-to-br from-amber-900/20 to-orange-900/20 border border-amber-500/20">
-                        <label className="text-xs text-amber-400/80 mb-3 block uppercase tracking-wide font-medium">
-                            Repair Estimate • {sqft.toLocaleString()} sf
-                        </label>
+                    <div className="space-y-3">
                         <div className="grid grid-cols-3 gap-2">
                             <button
                                 onClick={() => applyRepair(repairEstimate.low)}
                                 className={`p-3 rounded-xl text-center transition-all ${inputs.repairEstimate === repairEstimate.low
-                                    ? 'bg-amber-500 text-white shadow-lg shadow-amber-500/30'
-                                    : 'bg-slate-800/80 text-slate-300 hover:bg-slate-700'
+                                    ? 'bg-amber-500 text-white shadow-lg'
+                                    : 'bg-slate-800 hover:bg-slate-700'
                                     }`}
                             >
-                                <div className="text-[10px] uppercase tracking-wide opacity-60">Low</div>
-                                <div className="text-[8px] opacity-50 mb-0.5">Builder Grade</div>
-                                <div className="font-bold text-sm">{formatCurrency(repairEstimate.low)}</div>
+                                <p className="text-xs text-slate-400 mb-1">LOW</p>
+                                <p className="font-bold text-white">{formatCurrency(repairEstimate.low)}</p>
                             </button>
                             <button
                                 onClick={() => applyRepair(repairEstimate.median)}
                                 className={`p-3 rounded-xl text-center transition-all ${inputs.repairEstimate === repairEstimate.median
-                                    ? 'bg-amber-500 text-white shadow-lg shadow-amber-500/30'
-                                    : 'bg-slate-800/80 text-slate-300 hover:bg-slate-700'
+                                    ? 'bg-amber-500 text-white shadow-lg'
+                                    : 'bg-slate-800 hover:bg-slate-700'
                                     }`}
                             >
-                                <div className="text-[10px] uppercase tracking-wide opacity-60">Mid</div>
-                                <div className="text-[8px] opacity-50 mb-0.5">Standard</div>
-                                <div className="font-bold text-sm">{formatCurrency(repairEstimate.median)}</div>
+                                <p className="text-xs text-slate-400 mb-1">MID</p>
+                                <p className="font-bold text-white">{formatCurrency(repairEstimate.median)}</p>
                             </button>
                             <button
                                 onClick={() => applyRepair(repairEstimate.high)}
                                 className={`p-3 rounded-xl text-center transition-all ${inputs.repairEstimate === repairEstimate.high
-                                    ? 'bg-amber-500 text-white shadow-lg shadow-amber-500/30'
-                                    : 'bg-slate-800/80 text-slate-300 hover:bg-slate-700'
+                                    ? 'bg-amber-500 text-white shadow-lg'
+                                    : 'bg-slate-800 hover:bg-slate-700'
                                     }`}
                             >
-                                <div className="text-[10px] uppercase tracking-wide opacity-60">High</div>
-                                <div className="text-[8px] opacity-50 mb-0.5">Premium</div>
-                                <div className="font-bold text-sm">{formatCurrency(repairEstimate.high)}</div>
+                                <p className="text-xs text-slate-400 mb-1">HIGH</p>
+                                <p className="font-bold text-white">{formatCurrency(repairEstimate.high)}</p>
                             </button>
                         </div>
-                        {/* Custom input */}
-                        <div className="mt-3">
-                            <input
-                                type="text"
-                                inputMode="numeric"
-                                pattern="[0-9,$]*"
-                                value={formatCurrencyValue(inputs.repairEstimate)}
-                                onChange={(e) => updateInput('repairEstimate', parseInputValue(e.target.value))}
-                                placeholder="Or enter custom $amount..."
-                                className="input-field text-sm h-10"
-                            />
+
+                        {/* Selected Value Display */}
+                        <div className="p-3 rounded-xl bg-slate-800/50 text-center">
+                            <span className="text-slate-400 text-sm">Selected: </span>
+                            <span className="text-white font-bold text-lg">{formatCurrency(inputs.repairEstimate)}</span>
                         </div>
                     </div>
                 )}
@@ -226,39 +106,9 @@ export default function PropertyInput({
                 {/* No sqft message */}
                 {!repairEstimate && (
                     <div className="p-4 rounded-xl bg-slate-800/30 border border-slate-700/50 text-center text-slate-500 text-sm">
-                        Enter sq ft above to calculate repair estimates
+                        Enter square feet to see repair estimates
                     </div>
                 )}
-
-                {/* Secondary Inputs */}
-                <div className="grid grid-cols-2 gap-3">
-                    <div>
-                        <label className="text-xs text-slate-500 mb-1.5 block uppercase tracking-wide font-medium">As-Is Value</label>
-                        <input
-                            type="text"
-                            inputMode="numeric"
-                            pattern="[0-9,$]*"
-                            value={formatCurrencyValue(inputs.asIsValue)}
-                            onChange={(e) => updateInput('asIsValue', parseInputValue(e.target.value))}
-                            placeholder="$380,000"
-                            className="input-field"
-                        />
-                    </div>
-                    <div>
-                        <label className="text-xs text-slate-500 mb-1.5 block uppercase tracking-wide font-medium">List Price</label>
-                        <input
-                            type="text"
-                            inputMode="numeric"
-                            pattern="[0-9,$]*"
-                            value={formatCurrencyValue(inputs.listPrice)}
-                            onChange={(e) => updateInput('listPrice', parseInputValue(e.target.value))}
-                            placeholder="$400,000"
-                            className="input-field"
-                        />
-                    </div>
-                </div>
-
-
             </div>
         </div>
     );

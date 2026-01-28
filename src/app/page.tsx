@@ -310,12 +310,8 @@ Best Offer: ${formatCurrency(results.bestOffer.offerPrice)} (${results.bestStrat
                         <PropertyInput
                             inputs={state.inputs}
                             onInputsChange={(inputs) => setState((s) => ({ ...s, inputs }))}
-                            address={state.address}
-                            onAddressChange={(address) => setState((s) => ({ ...s, address }))}
                             sqft={state.sqft}
                             onSqftChange={(sqft) => setState((s) => ({ ...s, sqft }))}
-                            addressHistory={addressHistory}
-                            onSaveToHistory={saveToHistory}
                         />
 
                         <SettingsPanel
