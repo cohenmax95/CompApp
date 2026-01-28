@@ -182,6 +182,7 @@ export default function PropertyInput({
                                     }`}
                             >
                                 <div className="text-[10px] uppercase tracking-wide opacity-60">Low</div>
+                                <div className="text-[8px] opacity-50 mb-0.5">Builder Grade</div>
                                 <div className="font-bold text-sm">{formatCurrency(repairEstimate.low)}</div>
                             </button>
                             <button
@@ -192,6 +193,7 @@ export default function PropertyInput({
                                     }`}
                             >
                                 <div className="text-[10px] uppercase tracking-wide opacity-60">Mid</div>
+                                <div className="text-[8px] opacity-50 mb-0.5">Standard</div>
                                 <div className="font-bold text-sm">{formatCurrency(repairEstimate.median)}</div>
                             </button>
                             <button
@@ -202,6 +204,7 @@ export default function PropertyInput({
                                     }`}
                             >
                                 <div className="text-[10px] uppercase tracking-wide opacity-60">High</div>
+                                <div className="text-[8px] opacity-50 mb-0.5">Premium</div>
                                 <div className="font-bold text-sm">{formatCurrency(repairEstimate.high)}</div>
                             </button>
                         </div>

@@ -301,6 +301,11 @@ Best Offer: ${formatCurrency(results.bestOffer.offerPrice)} (${results.bestStrat
                 <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
                     {/* Left Column - Inputs */}
                     <div className="lg:col-span-1 space-y-6">
+                        <AVMPanel
+                            address={state.address}
+                            onApplyEstimate={handleApplyAVMEstimate}
+                        />
+
                         <PropertyInput
                             inputs={state.inputs}
                             onInputsChange={(inputs) => setState((s) => ({ ...s, inputs }))}
@@ -310,11 +315,6 @@ Best Offer: ${formatCurrency(results.bestOffer.offerPrice)} (${results.bestStrat
                             onSqftChange={(sqft) => setState((s) => ({ ...s, sqft }))}
                             addressHistory={addressHistory}
                             onSaveToHistory={saveToHistory}
-                        />
-
-                        <AVMPanel
-                            address={state.address}
-                            onApplyEstimate={handleApplyAVMEstimate}
                         />
 
                         <SettingsPanel
