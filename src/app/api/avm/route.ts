@@ -139,6 +139,35 @@ function addressesMatch(inputAddress: string, scrapedAddress: string): boolean {
 }
 
 // ============================================
+// TIMEOUT WRAPPER - Prevents scrapers from hanging indefinitely
+// ============================================
+async function withTimeout<T>(
+    promise: Promise<T>,
+    timeoutMs: number,
+    errorMessage: string = 'Operation timed out'
+): Promise<T> {
+    let timeoutId: NodeJS.Timeout;
+
+    const timeoutPromise = new Promise<never>((_, reject) => {
+        timeoutId = setTimeout(() => {
+            reject(new Error(errorMessage));
+        }, timeoutMs);
+    });
+
+    try {
+        const result = await Promise.race([promise, timeoutPromise]);
+        clearTimeout(timeoutId!);
+        return result;
+    } catch (error) {
+        clearTimeout(timeoutId!);
+        throw error;
+    }
+}
+
+// Scraper timeout in milliseconds (30 seconds)
+const SCRAPER_TIMEOUT = 30000;
+
+// ============================================
 // RENTCAST API - Direct API integration (no scraping!)
 // Provides property value estimates and rent estimates
 // Docs: https://developers.rentcast.io/reference/value-estimate
@@ -1141,10 +1170,20 @@ export async function POST(request: NextRequest) {
             const batchPromises = batch.map(async (source) => {
                 try {
                     console.log(`  Scraping ${source.name}...`);
-                    const result = await source.fn(address);
+                    const startTime = Date.now();
+
+                    // Wrap with timeout to prevent hanging
+                    const result = await withTimeout(
+                        source.fn(address),
+                        SCRAPER_TIMEOUT,
+                        `${source.name} timed out after ${SCRAPER_TIMEOUT / 1000}s`
+                    );
+
+                    const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
+                    console.log(`  ${source.name} completed in ${elapsed}s`);
                     return { source, result, error: null };
                 } catch (err) {
-                    console.error(`  ${source.name} error:`, err);
+                    console.error(`  ${source.name} error:`, err instanceof Error ? err.message : err);
                     return { source, result: null, error: err };
                 }
             });
