@@ -114,8 +114,8 @@ export default function OfferResultsDisplay({ results, hasInputs, arv, repairEst
                             key={pct}
                             onClick={() => setArvPercent(pct)}
                             className={`flex-1 py-2 rounded-lg text-sm font-medium transition-all ${arvPercent === pct
-                                    ? 'bg-emerald-500 text-white'
-                                    : 'bg-slate-800 text-slate-400 hover:bg-slate-700'
+                                ? 'bg-emerald-500 text-white'
+                                : 'bg-slate-800 text-slate-400 hover:bg-slate-700'
                                 }`}
                         >
                             {pct}%
@@ -123,6 +123,13 @@ export default function OfferResultsDisplay({ results, hasInputs, arv, repairEst
                     ))}
                 </div>
             </div>
+
+            {/* Fix & Flip Calculator - Full Breakdown */}
+            <FixFlipCalculator
+                arv={arv}
+                repairEstimate={repairEstimate}
+                sqft={sqft}
+            />
 
             {/* Wholetail Card */}
             <div>
@@ -138,13 +145,6 @@ export default function OfferResultsDisplay({ results, hasInputs, arv, repairEst
                     icon={icons.wholetail}
                 />
             </div>
-
-            {/* Fix & Flip Calculator - Full Breakdown */}
-            <FixFlipCalculator
-                arv={arv}
-                repairEstimate={repairEstimate}
-                sqft={sqft}
-            />
         </div>
     );
 }
