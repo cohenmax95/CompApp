@@ -671,16 +671,25 @@ const AVMPanel = forwardRef<AVMPanelRef, AVMPanelProps>(({ address, onAddressCha
 
             {/* Google Street View */}
             {address.trim() && hasResults && (
-                <div className="mt-4 rounded-xl overflow-hidden border border-slate-700/50">
-                    <iframe
-                        width="100%"
-                        height="200"
-                        style={{ border: 0 }}
-                        loading="lazy"
-                        allowFullScreen
-                        referrerPolicy="no-referrer-when-downgrade"
-                        src={`https://www.google.com/maps/embed/v1/streetview?key=AIzaSyBFw0Qbyq9zTFTd-tUY6dQQyYQ1ECZF7Pg&location=${encodeURIComponent(address)}&heading=0&pitch=0&fov=90`}
-                    />
+                <div className="mt-4">
+                    <div className="flex items-center gap-2 mb-2">
+                        <svg className="w-4 h-4 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                        </svg>
+                        <span className="text-sm text-slate-400">Street View</span>
+                    </div>
+                    <div className="rounded-xl overflow-hidden border border-slate-700/50 bg-slate-800/50">
+                        <img
+                            src={`https://maps.googleapis.com/maps/api/streetview?size=600x300&location=${encodeURIComponent(address)}&key=AIzaSyBFw0Qbyq9zTFTd-tUY6dQQyYQ1ECZF7Pg`}
+                            alt={`Street view of ${address}`}
+                            className="w-full h-[200px] object-cover"
+                            onError={(e) => {
+                                // Hide image on error
+                                (e.target as HTMLImageElement).style.display = 'none';
+                            }}
+                        />
+                    </div>
                 </div>
             )}
         </div>
