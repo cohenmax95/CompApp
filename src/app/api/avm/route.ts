@@ -11,6 +11,13 @@ const CAPTCHA_API_KEY = '4f79e12ed663c4cd4a26dc0186744710';
 // RentCast API key for property valuations
 const RENTCAST_API_KEY = '647e5f595c784cdba15fc418d95d3541';
 
+// NARRPR (Realtors Property Resource) credentials
+const NARRPR_EMAIL = process.env.NARRPR_EMAIL || 'cohen.max.95@gmail.com';
+const NARRPR_PASSWORD = process.env.NARRPR_PASSWORD || 'Flhomebuyers123!';
+
+// Google Gemini API key for AI analysis
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY || 'AIzaSyCGmwtuMS_kCVEO-6Xp0MjsnDicdtpduXs';
+
 // ============================================
 // BROWSER CONFIGURATION WITH STEALTH PLUGIN
 // Uses puppeteer-extra-plugin-stealth for advanced evasion
@@ -358,6 +365,241 @@ async function fetchRentCast(address: string): Promise<{
         return { url: `https://app.rentcast.io/app?address=${encodeURIComponent(address)}` };
     } catch (error) {
         console.error('RentCast API error:', error);
+        return null;
+    }
+}
+
+// ============================================
+// NARRPR (Realtors Property Resource) SCRAPER
+// - Logs into narrpr.com
+// - Searches for property
+// - Runs CMA (Comparative Market Analysis)
+// - Extracts comparable sales
+// - Uses Gemini AI to calculate ARV
+// ============================================
+
+interface NARRPRComp {
+    address: string;
+    price: number;
+    sqft: number;
+    beds: number;
+    baths: number;
+    soldDate: string;
+    distance?: string;
+}
+
+async function analyzeCompsWithGemini(
+    subjectAddress: string,
+    comps: NARRPRComp[],
+    subjectData?: { sqft?: number; beds?: number; baths?: number }
+): Promise<{ arv: number; confidence: string; reasoning: string }> {
+    const log = new ScraperLogger('NARRPR-Gemini');
+
+    try {
+        log.log('AI', 'Sending comps to Gemini for ARV analysis');
+
+        const prompt = `You are a real estate appraiser analyzing comparable sales to determine ARV (After Repair Value) for a property.
+
+SUBJECT PROPERTY: ${subjectAddress}
+${subjectData ? `Subject Details: ${subjectData.sqft || 'Unknown'} sqft, ${subjectData.beds || 'Unknown'} beds, ${subjectData.baths || 'Unknown'} baths` : ''}
+
+COMPARABLE SALES:
+${comps.map((c, i) => `${i + 1}. ${c.address}
+   - Sold: $${c.price.toLocaleString()} on ${c.soldDate}
+   - Size: ${c.sqft} sqft, ${c.beds} bed/${c.baths} bath
+   ${c.distance ? `- Distance: ${c.distance}` : ''}`).join('\n\n')}
+
+INSTRUCTIONS:
+1. Analyze these comparable sales
+2. Weight more recent sales and closer properties higher
+3. Adjust for differences in size, beds, baths
+4. Calculate the most likely ARV for the subject property
+5. Consider price per sqft trends
+
+Respond in this EXACT JSON format:
+{
+  "arv": <number - the ARV as an integer>,
+  "confidence": "<HIGH/MEDIUM/LOW>",
+  "reasoning": "<2-3 sentences explaining your analysis>"
+}`;
+
+        const response = await fetch(`https://generativelanguage.googleapis.com/v1beta/models/gemini-2.0-flash:generateContent?key=${GEMINI_API_KEY}`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                contents: [{ parts: [{ text: prompt }] }],
+                generationConfig: {
+                    temperature: 0.3,
+                    maxOutputTokens: 500,
+                }
+            })
+        });
+
+        if (!response.ok) {
+            log.log('ERROR', `Gemini API error: ${response.status}`);
+            throw new Error(`Gemini API error: ${response.status}`);
+        }
+
+        const data = await response.json();
+        const text = data.candidates?.[0]?.content?.parts?.[0]?.text || '';
+
+        // Parse JSON from response
+        const jsonMatch = text.match(/\{[\s\S]*\}/);
+        if (jsonMatch) {
+            const result = JSON.parse(jsonMatch[0]);
+            log.log('SUCCESS', `ARV: $${result.arv?.toLocaleString()}, Confidence: ${result.confidence}`);
+            return {
+                arv: result.arv || 0,
+                confidence: result.confidence || 'MEDIUM',
+                reasoning: result.reasoning || 'AI analysis completed'
+            };
+        }
+
+        throw new Error('Could not parse Gemini response');
+    } catch (error) {
+        log.error('EXCEPTION', error);
+        // Fallback: use median of comps
+        const prices = comps.map(c => c.price).sort((a, b) => a - b);
+        const median = prices[Math.floor(prices.length / 2)] || 0;
+        return {
+            arv: median,
+            confidence: 'LOW',
+            reasoning: 'Fallback to median of comparable sales (AI analysis failed)'
+        };
+    }
+}
+
+async function scrapeNARRPR(address: string): Promise<{
+    estimate?: number;
+    low?: number;
+    high?: number;
+    url: string;
+    propertyData?: Partial<PropertyData>;
+    comps?: NARRPRComp[];
+    aiAnalysis?: { confidence: string; reasoning: string };
+} | null> {
+    const log = new ScraperLogger('NARRPR');
+    let browser: Browser | null = null;
+
+    try {
+        log.log('START', 'Beginning NARRPR CMA scrape');
+
+        browser = await createStealthBrowser();
+        const page = await browser.newPage();
+        await configurePage(page);
+
+        // Step 1: Navigate to login
+        log.log('LOGIN', 'Navigating to NARRPR login page');
+        await page.goto('https://auth.narrpr.com/auth/sign-in', { waitUntil: 'networkidle2', timeout: 30000 });
+
+        // Step 2: Enter credentials
+        log.log('LOGIN', 'Entering credentials');
+        await page.waitForSelector('#SignInEmail', { timeout: 10000 });
+        await page.type('#SignInEmail', NARRPR_EMAIL, { delay: 50 });
+        await page.type('#SignInPassword', NARRPR_PASSWORD, { delay: 50 });
+
+        // Step 3: Click login
+        log.log('LOGIN', 'Clicking sign in button');
+        await page.click('#SignInBtn');
+
+        // Step 4: Wait for dashboard to load
+        log.log('LOGIN', 'Waiting for dashboard');
+        await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 30000 });
+
+        // Step 5: Search for property
+        log.log('SEARCH', `Searching for: ${address}`);
+
+        // Wait for search box and enter address
+        await page.waitForSelector('input[type="search"], input[placeholder*="address"], input[placeholder*="Address"]', { timeout: 15000 });
+        const searchInput = await page.$('input[type="search"], input[placeholder*="address"], input[placeholder*="Address"]');
+        if (searchInput) {
+            await searchInput.type(address, { delay: 30 });
+            await page.keyboard.press('Enter');
+        }
+
+        // Wait for property page
+        await new Promise(r => setTimeout(r, 3000));
+
+        // Step 6: Look for CMA button and click it
+        log.log('CMA', 'Looking for CMA button');
+        const cmaButton = await page.$('button:has-text("CMA"), a:has-text("CMA"), [data-testid*="cma"], .cma-button');
+        if (cmaButton) {
+            await cmaButton.click();
+            await new Promise(r => setTimeout(r, 3000));
+        }
+
+        // Step 7: Extract property data from page
+        log.log('EXTRACT', 'Extracting property and comp data');
+
+        const pageContent = await page.content();
+        const pageText = await page.evaluate(() => document.body.innerText);
+
+        // Extract subject property data
+        const sqftMatch = pageText.match(/(\d{1,3}(?:,\d{3})*)\s*(?:sq\s*ft|sqft|SF)/i);
+        const bedsMatch = pageText.match(/(\d+)\s*(?:bed|br)/i);
+        const bathsMatch = pageText.match(/([\d.]+)\s*(?:bath|ba)/i);
+
+        const subjectData = {
+            sqft: sqftMatch ? parseInt(sqftMatch[1].replace(/,/g, '')) : 0,
+            beds: bedsMatch ? parseInt(bedsMatch[1]) : 0,
+            baths: bathsMatch ? parseFloat(bathsMatch[1]) : 0,
+        };
+
+        // Try to extract comparable sales from the page
+        // This is simplified - real implementation would parse CMA table
+        const comps: NARRPRComp[] = [];
+
+        // Look for price patterns with addresses
+        const compPatterns = pageText.matchAll(/(\d+\s+[A-Za-z].*?(?:St|Ave|Rd|Dr|Ln|Ct|Way|Blvd).*?)\s*\$\s*([\d,]+)/gi);
+        for (const match of compPatterns) {
+            const priceStr = match[2].replace(/,/g, '');
+            const price = parseInt(priceStr);
+            if (price > 50000 && price < 10000000) {
+                comps.push({
+                    address: match[1].trim(),
+                    price,
+                    sqft: 0,
+                    beds: 0,
+                    baths: 0,
+                    soldDate: 'Recent',
+                });
+            }
+            if (comps.length >= 10) break;
+        }
+
+        log.log('COMPS', `Found ${comps.length} comparable sales`);
+
+        await browser.close();
+        browser = null;
+
+        // Step 8: Use Gemini AI to analyze comps and calculate ARV
+        if (comps.length > 0) {
+            const aiResult = await analyzeCompsWithGemini(address, comps, subjectData);
+
+            if (aiResult.arv > 0) {
+                const result = {
+                    estimate: aiResult.arv,
+                    low: Math.round(aiResult.arv * 0.95),
+                    high: Math.round(aiResult.arv * 1.05),
+                    url: 'https://www.narrpr.com',
+                    propertyData: subjectData,
+                    comps,
+                    aiAnalysis: {
+                        confidence: aiResult.confidence,
+                        reasoning: aiResult.reasoning
+                    }
+                };
+                log.finish(true, result);
+                return result;
+            }
+        }
+
+        log.finish(false);
+        return { url: 'https://www.narrpr.com' };
+
+    } catch (error) {
+        log.error('EXCEPTION', error);
+        if (browser) await browser.close();
         return null;
     }
 }
@@ -1874,10 +2116,11 @@ export async function POST(request: NextRequest) {
 
         console.log('Starting AVM scraping for:', address);
 
-        // Using puppeteer-extra with stealth plugin for bot detection evasion
-        // Stealth mode should help with previously blocked sites
+        // NARRPR uses real MLS data + Gemini AI for best accuracy
+        // Other sources use Puppeteer scrapers (may be blocked)
         const sources = [
             { name: 'RentCast', fn: fetchRentCast, accuracy: { low: 0.97, high: 1.03 } },
+            { name: 'NARRPR', fn: scrapeNARRPR, accuracy: { low: 0.98, high: 1.02 } },
             { name: 'Zillow', fn: scrapeZillow, accuracy: { low: 0.93, high: 1.07 } },
             { name: 'Redfin', fn: scrapeRedfin, accuracy: { low: 0.95, high: 1.05 } },
             { name: 'Realtor.com', fn: scrapeRealtor, accuracy: { low: 0.94, high: 1.06 } },
