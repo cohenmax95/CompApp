@@ -87,6 +87,58 @@ async function solveCaptcha(siteKey: string, pageUrl: string): Promise<string | 
 }
 
 // ============================================
+// ADDRESS MATCHING HELPER
+// Verifies scraped address matches the input address
+// ============================================
+function addressesMatch(inputAddress: string, scrapedAddress: string): boolean {
+    if (!scrapedAddress) return false;
+
+    // Normalize both addresses for comparison
+    const normalize = (addr: string) => addr
+        .toLowerCase()
+        .replace(/[,.#]/g, '')
+        .replace(/\s+/g, ' ')
+        // Normalize street suffixes
+        .replace(/\b(street)\b/g, 'st')
+        .replace(/\b(drive)\b/g, 'dr')
+        .replace(/\b(avenue)\b/g, 'ave')
+        .replace(/\b(road)\b/g, 'rd')
+        .replace(/\b(lane)\b/g, 'ln')
+        .replace(/\b(court)\b/g, 'ct')
+        .replace(/\b(boulevard)\b/g, 'blvd')
+        .replace(/\b(place)\b/g, 'pl')
+        .replace(/\b(circle)\b/g, 'cir')
+        .trim();
+
+    const input = normalize(inputAddress);
+    const scraped = normalize(scrapedAddress);
+
+    // Extract the street number and first word of street name
+    const inputMatch = input.match(/^(\d+)\s+(\w+)/);
+    const scrapedMatch = scraped.match(/^(\d+)\s+(\w+)/);
+
+    if (!inputMatch || !scrapedMatch) {
+        // Fallback: check if first 3 parts match
+        const inputParts = input.split(/\s+/).slice(0, 3);
+        return inputParts.every(part => scraped.includes(part));
+    }
+
+    // Street number must match exactly
+    if (inputMatch[1] !== scrapedMatch[1]) {
+        console.log(`Address mismatch: street number ${inputMatch[1]} vs ${scrapedMatch[1]}`);
+        return false;
+    }
+
+    // Street name first word must match
+    if (inputMatch[2] !== scrapedMatch[2]) {
+        console.log(`Address mismatch: street name ${inputMatch[2]} vs ${scrapedMatch[2]}`);
+        return false;
+    }
+
+    return true;
+}
+
+// ============================================
 // RENTCAST API - Direct API integration (no scraping!)
 // Provides property value estimates and rent estimates
 // Docs: https://developers.rentcast.io/reference/value-estimate
@@ -221,6 +273,7 @@ async function scrapeZillow(address: string): Promise<{
             let low = 0;
             let high = 0;
             let sqft = 0, beds = 0, baths = 0, yearBuilt = 0, lotSize = 0;
+            let scrapedAddress = '';
 
             // Method 1: Parse __NEXT_DATA__ script tag
             const nextDataScript = document.getElementById('__NEXT_DATA__');
@@ -229,10 +282,16 @@ async function scrapeZillow(address: string): Promise<{
                     const nextData = JSON.parse(nextDataScript.textContent || '{}');
                     const gdpData = nextData?.props?.pageProps?.componentProps?.gdpClientCache;
                     if (gdpData) {
-                        const cacheStr = typeof gdpData === 'string' ? gdpData : JSON.stringify(gdpData);
                         const cacheData = typeof gdpData === 'string' ? JSON.parse(gdpData) : gdpData;
                         // Extract from cache structure
-                        const entries = Object.values(cacheData) as Array<{ property?: { zestimate?: number; zestimateLowPercent?: number; zestimateHighPercent?: number; livingArea?: number; bedrooms?: number; bathrooms?: number; yearBuilt?: number; lotSize?: number } }>;
+                        const entries = Object.values(cacheData) as Array<{
+                            property?: {
+                                zestimate?: number; zestimateLowPercent?: number; zestimateHighPercent?: number;
+                                livingArea?: number; bedrooms?: number; bathrooms?: number; yearBuilt?: number; lotSize?: number;
+                                address?: { streetAddress?: string; city?: string; state?: string; zipcode?: string };
+                                streetAddress?: string;
+                            }
+                        }>;
                         for (const entry of entries) {
                             if (entry?.property?.zestimate) {
                                 estimate = entry.property.zestimate;
@@ -245,6 +304,9 @@ async function scrapeZillow(address: string): Promise<{
                                 baths = entry.property.bathrooms || 0;
                                 yearBuilt = entry.property.yearBuilt || 0;
                                 lotSize = entry.property.lotSize || 0;
+                                // Extract address for verification
+                                scrapedAddress = entry.property.address?.streetAddress ||
+                                    entry.property.streetAddress || '';
                                 break;
                             }
                         }
@@ -273,19 +335,27 @@ async function scrapeZillow(address: string): Promise<{
                 const bathsMatch = html.match(/"bathrooms":([\d.]+)/);
                 const yearMatch = html.match(/"yearBuilt":(\d+)/);
                 const lotMatch = html.match(/"lotSize":(\d+)/);
+                const addrMatch = html.match(/"streetAddress":"([^"]+)"/);
                 sqft = sqftMatch ? parseInt(sqftMatch[1]) : sqft;
                 beds = bedsMatch ? parseInt(bedsMatch[1]) : beds;
                 baths = bathsMatch ? parseFloat(bathsMatch[1]) : baths;
                 yearBuilt = yearMatch ? parseInt(yearMatch[1]) : yearBuilt;
                 lotSize = lotMatch ? parseInt(lotMatch[1]) : lotSize;
+                scrapedAddress = addrMatch ? addrMatch[1] : scrapedAddress;
             }
 
-            return { estimate, low, high, sqft, beds, baths, yearBuilt, lotSize };
+            return { estimate, low, high, sqft, beds, baths, yearBuilt, lotSize, scrapedAddress };
         });
 
         await browser.close();
 
+        // Verify address matches before accepting result
         if (data.estimate > 0) {
+            if (data.scrapedAddress && !addressesMatch(address, data.scrapedAddress)) {
+                console.log(`Zillow address mismatch: expected "${address}", got "${data.scrapedAddress}"`);
+                return { url: searchUrl }; // Return without estimate
+            }
+
             return {
                 estimate: data.estimate,
                 low: data.low || Math.round(data.estimate * 0.93),
@@ -414,12 +484,24 @@ async function scrapeRedfin(address: string): Promise<{
                 yearBuilt = yearMatch ? parseInt(yearMatch[1]) : yearBuilt;
             }
 
-            return { estimate, sqft, beds, baths, yearBuilt };
+            // Extract address for verification
+            const addrMatch = html.match(/"streetAddress":\s*\{[^}]*"value"\s*:\s*"([^"]+)"/) ||
+                html.match(/"streetAddress"\s*:\s*"([^"]+)"/) ||
+                html.match(/"address"\s*:\s*"([^"]+)"/);
+            const scrapedAddress = addrMatch ? addrMatch[1] : '';
+
+            return { estimate, sqft, beds, baths, yearBuilt, scrapedAddress };
         });
 
         await browser.close();
 
+        // Verify address matches before accepting result
         if (data.estimate > 0) {
+            if (data.scrapedAddress && !addressesMatch(address, data.scrapedAddress)) {
+                console.log(`Redfin address mismatch: expected "${address}", got "${data.scrapedAddress}"`);
+                return { url: searchUrl };
+            }
+
             return {
                 estimate: data.estimate,
                 low: Math.round(data.estimate * 0.95),
@@ -488,6 +570,7 @@ async function scrapeRealtor(address: string): Promise<{
             const bedsMatch = html.match(/"beds":(\d+)/);
             const bathsMatch = html.match(/"baths":([\d.]+)/);
             const yearMatch = html.match(/"year_built":(\d+)/);
+            const addrMatch = html.match(/"line"\s*:\s*"([^"]+)"/) || html.match(/"street_address"\s*:\s*"([^"]+)"/);
 
             return {
                 estimate,
@@ -495,12 +578,19 @@ async function scrapeRealtor(address: string): Promise<{
                 beds: bedsMatch ? parseInt(bedsMatch[1]) : 0,
                 baths: bathsMatch ? parseFloat(bathsMatch[1]) : 0,
                 yearBuilt: yearMatch ? parseInt(yearMatch[1]) : 0,
+                scrapedAddress: addrMatch ? addrMatch[1] : '',
             };
         });
 
         await browser.close();
 
+        // Verify address matches before accepting result
         if (data.estimate > 0) {
+            if (data.scrapedAddress && !addressesMatch(address, data.scrapedAddress)) {
+                console.log(`Realtor address mismatch: expected "${address}", got "${data.scrapedAddress}"`);
+                return { url: searchUrl };
+            }
+
             return {
                 estimate: data.estimate,
                 low: Math.round(data.estimate * 0.94),
@@ -554,18 +644,26 @@ async function scrapeTrulia(address: string): Promise<{
             const sqftMatch = html.match(/"floorSpace":\{"value":(\d+)/) || html.match(/"livingArea":(\d+)/);
             const bedsMatch = html.match(/"bedrooms":(\d+)/);
             const bathsMatch = html.match(/"bathrooms":(\d+)/);
+            const addrMatch = html.match(/"streetAddress"\s*:\s*"([^"]+)"/) || html.match(/"street"\s*:\s*"([^"]+)"/);
 
             return {
                 estimate: estimateMatch ? parseInt(estimateMatch[1]) : 0,
                 sqft: sqftMatch ? parseInt(sqftMatch[1]) : 0,
                 beds: bedsMatch ? parseInt(bedsMatch[1]) : 0,
                 baths: bathsMatch ? parseInt(bathsMatch[1]) : 0,
+                scrapedAddress: addrMatch ? addrMatch[1] : '',
             };
         });
 
         await browser.close();
 
+        // Verify address matches before accepting result
         if (data.estimate > 0) {
+            if (data.scrapedAddress && !addressesMatch(address, data.scrapedAddress)) {
+                console.log(`Trulia address mismatch: expected "${address}", got "${data.scrapedAddress}"`);
+                return { url: searchUrl };
+            }
+
             return {
                 estimate: data.estimate,
                 low: Math.round(data.estimate * 0.93),
@@ -966,19 +1064,16 @@ export async function POST(request: NextRequest) {
         console.log('Starting AVM scraping for:', address);
 
         // Scrape sources in parallel batches of 3 for ~3x faster execution
-        // NOTE: Web scrapers are DISABLED - they were returning data for WRONG properties!
-        // RentCast is a direct API that returns verified accurate data
-        // TODO: Fix scrapers to properly match the exact property before re-enabling
+        // All scrapers now have address verification to prevent wrong property matching
         const sources = [
             { name: 'RentCast', fn: fetchRentCast, accuracy: { low: 0.97, high: 1.03 } },
-            // DISABLED - returning wrong property data:
-            // { name: 'Zillow (Zestimate)', fn: scrapeZillow, accuracy: { low: 0.93, high: 1.07 } },
-            // { name: 'Redfin Estimate', fn: scrapeRedfin, accuracy: { low: 0.95, high: 1.05 } },
-            // { name: 'Realtor.com', fn: scrapeRealtor, accuracy: { low: 0.94, high: 1.06 } },
-            // { name: 'ComeHome (HouseCanary)', fn: scrapeComeHome, accuracy: { low: 0.94, high: 1.06 } },
-            // { name: 'Trulia', fn: scrapeTrulia, accuracy: { low: 0.93, high: 1.07 } },
-            // { name: 'Bank of America', fn: scrapeBankOfAmerica, accuracy: { low: 0.95, high: 1.05 } },
-            // { name: 'Xome', fn: scrapeXome, accuracy: { low: 0.90, high: 1.10 } },
+            { name: 'Zillow (Zestimate)', fn: scrapeZillow, accuracy: { low: 0.93, high: 1.07 } },
+            { name: 'Redfin Estimate', fn: scrapeRedfin, accuracy: { low: 0.95, high: 1.05 } },
+            { name: 'Realtor.com', fn: scrapeRealtor, accuracy: { low: 0.94, high: 1.06 } },
+            { name: 'Trulia', fn: scrapeTrulia, accuracy: { low: 0.93, high: 1.07 } },
+            { name: 'ComeHome (HouseCanary)', fn: scrapeComeHome, accuracy: { low: 0.94, high: 1.06 } },
+            { name: 'Bank of America', fn: scrapeBankOfAmerica, accuracy: { low: 0.95, high: 1.05 } },
+            { name: 'Xome', fn: scrapeXome, accuracy: { low: 0.90, high: 1.10 } },
         ];
 
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
