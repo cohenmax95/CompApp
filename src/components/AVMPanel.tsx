@@ -38,7 +38,7 @@ const AVMPanel = forwardRef<AVMPanelRef, AVMPanelProps>(({ address, onAddressCha
     const [isLoading, setIsLoading] = useState(false);
     const [loadingProgress, setLoadingProgress] = useState(0);
     const [error, setError] = useState<string | null>(null);
-    const [isExpanded, setIsExpanded] = useState(false);
+    const [isExpanded, setIsExpanded] = useState(true);
     const [sourceStates, setSourceStates] = useState<Record<string, SourceState>>({});
 
     // Initialize source states
@@ -352,45 +352,51 @@ const AVMPanel = forwardRef<AVMPanelRef, AVMPanelProps>(({ address, onAddressCha
                         </div>
                     </div>
 
-                    {/* Expand/Collapse */}
-                    <button
-                        onClick={() => setIsExpanded(!isExpanded)}
-                        className="w-full flex items-center justify-center gap-2 py-2 text-sm text-slate-400 hover:text-white transition-colors"
-                    >
-                        <svg className={`w-4 h-4 transition-transform ${isExpanded ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                        </svg>
-                        {isExpanded ? 'Hide details' : `View all ${results.length} estimates`}
-                    </button>
-
-                    {/* Expanded List */}
-                    {isExpanded && (
-                        <div className="space-y-2 max-h-[300px] overflow-y-auto pr-1 animate-fade-in">
-                            {results.map((result, index) => (
-                                <div
-                                    key={index}
-                                    className="p-3 rounded-lg bg-slate-800/50 border border-slate-700/50 flex items-center justify-between"
-                                >
-                                    <div className="flex-1">
-                                        <div className="flex items-center gap-2">
+                    {/* Sources List - Always Visible */}
+                    <div className="space-y-2 mt-4">
+                        <div className="flex items-center justify-between mb-2">
+                            <p className="text-sm font-medium text-slate-300">All Sources</p>
+                            <button
+                                onClick={() => setIsExpanded(!isExpanded)}
+                                className="text-xs text-slate-500 hover:text-white transition-colors"
+                            >
+                                {isExpanded ? 'Collapse' : 'Expand'}
+                            </button>
+                        </div>
+                        {isExpanded && (
+                            <div className="space-y-2 max-h-[300px] overflow-y-auto pr-1 animate-fade-in">
+                                {results.map((result, index) => (
+                                    <div
+                                        key={index}
+                                        className="p-3 rounded-lg bg-slate-800/50 border border-slate-700/50 flex items-center justify-between"
+                                    >
+                                        <div className="flex-1">
                                             <p className="text-sm font-medium text-white">{result.source}</p>
+                                            <p className="text-xs text-slate-500">
+                                                Range: {formatAVMCurrency(result.low)} - {formatAVMCurrency(result.high)}
+                                            </p>
+                                        </div>
+                                        <div className="flex items-center gap-3">
+                                            <p className="text-lg font-semibold text-emerald-400">{formatAVMCurrency(result.estimate)}</p>
                                             {result.url && (
-                                                <a href={result.url} target="_blank" rel="noopener noreferrer" className="text-cyan-400 hover:text-cyan-300">
+                                                <a
+                                                    href={result.url}
+                                                    target="_blank"
+                                                    rel="noopener noreferrer"
+                                                    className="px-2 py-1 rounded bg-cyan-500/20 text-cyan-400 text-xs font-medium hover:bg-cyan-500/30 transition-colors flex items-center gap-1"
+                                                >
                                                     <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
                                                     </svg>
+                                                    View
                                                 </a>
                                             )}
                                         </div>
-                                        <p className="text-xs text-slate-500">
-                                            Range: {formatAVMCurrency(result.low)} - {formatAVMCurrency(result.high)}
-                                        </p>
                                     </div>
-                                    <p className="text-lg font-semibold text-emerald-400">{formatAVMCurrency(result.estimate)}</p>
-                                </div>
-                            ))}
-                        </div>
-                    )}
+                                ))}
+                            </div>
+                        )}
+                    </div>
                 </div>
             )}
 

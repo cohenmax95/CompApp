@@ -12,6 +12,7 @@ interface FixFlipCalculatorProps {
 export default function FixFlipCalculator({ arv, repairEstimate, sqft }: FixFlipCalculatorProps) {
     const [arvPercent, setArvPercent] = useState(70);
     const [holdMonths, setHoldMonths] = useState(5);
+    const [loanPercent, setLoanPercent] = useState(90); // 70-100% LTV
 
     // STEP 1: Purchase Price (based on % of ARV)
     const purchasePrice = Math.round(arv * (arvPercent / 100) - repairEstimate);
@@ -19,10 +20,12 @@ export default function FixFlipCalculator({ arv, repairEstimate, sqft }: FixFlip
     // STEP 2: Acquisition Closing Costs (Florida standard ~2% of purchase)
     const acquireClosing = Math.round(purchasePrice * 0.02);
 
-    // STEP 3: Hard Money Costs
-    const hardMoneyPoints = Math.round(purchasePrice * 0.02); // 2 points
+    // STEP 3: Hard Money Costs (based on loan amount)
+    const loanAmount = Math.round(purchasePrice * (loanPercent / 100));
+    const downPayment = purchasePrice - loanAmount;
+    const hardMoneyPoints = Math.round(loanAmount * 0.02); // 2 points on loan
     const hardMoneyJunkFees = 1500; // Flat junk fees
-    const hardMoneyInterest = Math.round((purchasePrice * 0.11 / 12) * holdMonths); // 11% annual
+    const hardMoneyInterest = Math.round((loanAmount * 0.11 / 12) * holdMonths); // 11% annual on loan
     const totalHardMoney = hardMoneyPoints + hardMoneyJunkFees + hardMoneyInterest;
 
     // STEP 4: Holding Costs
@@ -70,7 +73,7 @@ export default function FixFlipCalculator({ arv, repairEstimate, sqft }: FixFlip
             </div>
 
             {/* Controls */}
-            <div className="grid grid-cols-2 gap-4">
+            <div className="grid grid-cols-3 gap-4">
                 <div>
                     <label className="text-xs text-slate-500 block mb-2">Purchase % of ARV</label>
                     <div className="flex items-center gap-2">
@@ -82,11 +85,25 @@ export default function FixFlipCalculator({ arv, repairEstimate, sqft }: FixFlip
                             onChange={(e) => setArvPercent(parseInt(e.target.value))}
                             className="flex-1 h-2 rounded-lg cursor-pointer"
                         />
-                        <span className="text-lg font-bold text-emerald-400 w-14 text-right">{arvPercent}%</span>
+                        <span className="text-lg font-bold text-emerald-400 w-12 text-right">{arvPercent}%</span>
                     </div>
                 </div>
                 <div>
-                    <label className="text-xs text-slate-500 block mb-2">Hold Time (months)</label>
+                    <label className="text-xs text-slate-500 block mb-2">Loan Amount</label>
+                    <div className="flex items-center gap-2">
+                        <input
+                            type="range"
+                            min="70"
+                            max="100"
+                            value={loanPercent}
+                            onChange={(e) => setLoanPercent(parseInt(e.target.value))}
+                            className="flex-1 h-2 rounded-lg cursor-pointer"
+                        />
+                        <span className="text-lg font-bold text-purple-400 w-12 text-right">{loanPercent}%</span>
+                    </div>
+                </div>
+                <div>
+                    <label className="text-xs text-slate-500 block mb-2">Hold Time</label>
                     <div className="flex items-center gap-2">
                         <input
                             type="range"
@@ -96,7 +113,7 @@ export default function FixFlipCalculator({ arv, repairEstimate, sqft }: FixFlip
                             onChange={(e) => setHoldMonths(parseInt(e.target.value))}
                             className="flex-1 h-2 rounded-lg cursor-pointer"
                         />
-                        <span className="text-lg font-bold text-cyan-400 w-14 text-right">{holdMonths} mo</span>
+                        <span className="text-lg font-bold text-cyan-400 w-12 text-right">{holdMonths}mo</span>
                     </div>
                 </div>
             </div>
@@ -128,6 +145,14 @@ export default function FixFlipCalculator({ arv, repairEstimate, sqft }: FixFlip
                         <span className="font-bold text-white">{formatCurrency(totalHardMoney)}</span>
                     </div>
                     <div className="text-xs text-slate-600 space-y-0.5">
+                        <div className="flex justify-between">
+                            <span>Loan Amount ({loanPercent}%)</span>
+                            <span>{formatCurrency(loanAmount)}</span>
+                        </div>
+                        <div className="flex justify-between">
+                            <span>Down Payment ({100 - loanPercent}%)</span>
+                            <span>{formatCurrency(downPayment)}</span>
+                        </div>
                         <div className="flex justify-between">
                             <span>2 Points</span>
                             <span>{formatCurrency(hardMoneyPoints)}</span>
