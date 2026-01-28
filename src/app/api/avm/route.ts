@@ -314,9 +314,24 @@ async function scrapeZillow(address: string): Promise<{
         await configurePage(page);
 
         const searchUrl = `https://www.zillow.com/homes/${encodeURIComponent(address)}_rb/`;
-        console.log('Zillow URL:', searchUrl);
+        console.log('[Zillow] Starting scrape for:', address);
+        console.log('[Zillow] URL:', searchUrl);
 
-        await page.goto(searchUrl, { waitUntil: 'networkidle2', timeout: 30000 });
+        // Navigate and capture response status
+        const response = await page.goto(searchUrl, { waitUntil: 'networkidle2', timeout: 25000 });
+        const status = response?.status() || 0;
+        console.log('[Zillow] HTTP Status:', status);
+
+        // Check for Cloudflare or bot detection
+        const pageTitle = await page.title();
+        console.log('[Zillow] Page title:', pageTitle);
+
+        if (status === 403 || status === 503 || pageTitle.toLowerCase().includes('access denied') || pageTitle.toLowerCase().includes('just a moment')) {
+            console.error('[Zillow] BLOCKED - Bot detection triggered. Status:', status, 'Title:', pageTitle);
+            await browser.close();
+            return { url: searchUrl };
+        }
+
         await new Promise(r => setTimeout(r, 2000));
 
         // Check for CAPTCHA and solve if needed
@@ -472,9 +487,24 @@ async function scrapeRedfin(address: string): Promise<{
         await configurePage(page);
 
         const searchUrl = `https://www.redfin.com/search?q=${encodeURIComponent(address)}`;
-        console.log('Redfin URL:', searchUrl);
+        console.log('[Redfin] Starting scrape for:', address);
+        console.log('[Redfin] URL:', searchUrl);
 
-        await page.goto(searchUrl, { waitUntil: 'networkidle2', timeout: 30000 });
+        // Navigate and capture response status
+        const response = await page.goto(searchUrl, { waitUntil: 'networkidle2', timeout: 25000 });
+        const status = response?.status() || 0;
+        console.log('[Redfin] HTTP Status:', status);
+
+        // Check for Cloudflare or bot detection
+        const pageTitle = await page.title();
+        console.log('[Redfin] Page title:', pageTitle);
+
+        if (status === 403 || status === 503 || pageTitle.toLowerCase().includes('access denied') || pageTitle.toLowerCase().includes('just a moment')) {
+            console.error('[Redfin] BLOCKED - Bot detection triggered. Status:', status, 'Title:', pageTitle);
+            await browser.close();
+            return { url: searchUrl };
+        }
+
         await new Promise(r => setTimeout(r, 2000));
 
         // Check for CAPTCHA
