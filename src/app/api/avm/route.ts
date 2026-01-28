@@ -508,85 +508,206 @@ async function scrapeNARRPR(address: string): Promise<{
 
         // Step 5: Search for property
         log.log('SEARCH', `Searching for: ${address}`);
+        await new Promise(r => setTimeout(r, 2000));
 
-        // Wait for search box and enter address
-        await page.waitForSelector('input[type="search"], input[placeholder*="address"], input[placeholder*="Address"]', { timeout: 15000 });
-        const searchInput = await page.$('input[type="search"], input[placeholder*="address"], input[placeholder*="Address"]');
+        // Find and use the search input
+        const searchInput = await page.$('.location-input, input[type="search"], input[placeholder*="address"], input[placeholder*="City"]');
         if (searchInput) {
+            await searchInput.click();
             await searchInput.type(address, { delay: 30 });
+            await new Promise(r => setTimeout(r, 2000)); // Wait for autocomplete
             await page.keyboard.press('Enter');
         }
 
-        // Wait for property page
-        await new Promise(r => setTimeout(r, 3000));
+        // Wait for property page to load
+        log.log('PROPERTY', 'Waiting for property page');
+        await new Promise(r => setTimeout(r, 5000));
 
-        // Step 6: Look for CMA button and click it
-        log.log('CMA', 'Looking for CMA button');
-        // Use evaluate to find button by text (CSS :has-text() is not standard)
-        const cmaFound = await page.evaluate(() => {
+        // Step 6: Click CMA tab
+        log.log('CMA', 'Clicking CMA tab');
+        const cmaTabClicked = await page.evaluate(() => {
+            // Look for CMA tab/link
+            const links = document.querySelectorAll('a, button, [role="tab"]');
+            for (const link of links) {
+                const text = (link as HTMLElement).textContent?.toUpperCase() || '';
+                if (text.includes('CMA') || text.includes('VALUATION')) {
+                    (link as HTMLElement).click();
+                    return true;
+                }
+            }
+            return false;
+        });
+        if (cmaTabClicked) {
+            await new Promise(r => setTimeout(r, 3000));
+        }
+
+        // Step 7: Click "Find Comps" button
+        log.log('CMA', 'Clicking Find Comps');
+        const findCompsClicked = await page.evaluate(() => {
             const buttons = document.querySelectorAll('button, a, [role="button"]');
             for (const btn of buttons) {
-                if (btn.textContent?.toUpperCase().includes('CMA')) {
+                const text = (btn as HTMLElement).textContent?.toUpperCase() || '';
+                if (text.includes('FIND COMP') || text.includes('SEARCH FOR COMP')) {
                     (btn as HTMLElement).click();
                     return true;
                 }
             }
             return false;
         });
-        if (cmaFound) {
-            log.log('CMA', 'Clicked CMA button');
+        if (findCompsClicked) {
+            log.log('CMA', 'Find Comps clicked, waiting for search form');
             await new Promise(r => setTimeout(r, 3000));
-        } else {
-            log.log('CMA', 'CMA button not found, continuing with page data');
         }
 
-        // Step 7: Extract property data from page
-        log.log('EXTRACT', 'Extracting property and comp data');
-
-        const pageContent = await page.content();
-        const pageText = await page.evaluate(() => document.body.innerText);
-
-        // Extract subject property data
-        const sqftMatch = pageText.match(/(\d{1,3}(?:,\d{3})*)\s*(?:sq\s*ft|sqft|SF)/i);
-        const bedsMatch = pageText.match(/(\d+)\s*(?:bed|br)/i);
-        const bathsMatch = pageText.match(/([\d.]+)\s*(?:bath|ba)/i);
-
-        const subjectData = {
-            sqft: sqftMatch ? parseInt(sqftMatch[1].replace(/,/g, '')) : 0,
-            beds: bedsMatch ? parseInt(bedsMatch[1]) : 0,
-            baths: bathsMatch ? parseFloat(bathsMatch[1]) : 0,
-        };
-
-        // Try to extract comparable sales from the page
-        // This is simplified - real implementation would parse CMA table
-        const comps: NARRPRComp[] = [];
-
-        // Look for price patterns with addresses
-        const compPatterns = pageText.matchAll(/(\d+\s+[A-Za-z].*?(?:St|Ave|Rd|Dr|Ln|Ct|Way|Blvd).*?)\s*\$\s*([\d,]+)/gi);
-        for (const match of compPatterns) {
-            const priceStr = match[2].replace(/,/g, '');
-            const price = parseInt(priceStr);
-            if (price > 50000 && price < 10000000) {
-                comps.push({
-                    address: match[1].trim(),
-                    price,
-                    sqft: 0,
-                    beds: 0,
-                    baths: 0,
-                    soldDate: 'Recent',
-                });
+        // Step 8: Click "Search" button
+        log.log('CMA', 'Clicking Search button');
+        const searchClicked = await page.evaluate(() => {
+            const buttons = document.querySelectorAll('button, input[type="submit"], [role="button"]');
+            for (const btn of buttons) {
+                const text = (btn as HTMLElement).textContent?.toUpperCase() || '';
+                const value = (btn as HTMLInputElement).value?.toUpperCase() || '';
+                if (text === 'SEARCH' || value === 'SEARCH' || text.includes('SEARCH COMP')) {
+                    (btn as HTMLElement).click();
+                    return true;
+                }
             }
-            if (comps.length >= 10) break;
+            return false;
+        });
+        if (searchClicked) {
+            log.log('CMA', 'Search clicked, waiting for results');
+            await new Promise(r => setTimeout(r, 8000)); // Wait for comps to load
         }
 
-        log.log('COMPS', `Found ${comps.length} comparable sales`);
+        // Step 9: Select all addresses (click checkboxes or select all)
+        log.log('CMA', 'Selecting all comp addresses');
+        await page.evaluate(() => {
+            // Try clicking "Select All" first
+            const selectAll = document.querySelector('input[type="checkbox"][id*="all"], label:contains("Select All"), button:contains("Select All")');
+            if (selectAll) {
+                (selectAll as HTMLElement).click();
+                return;
+            }
+            // Otherwise check all checkboxes
+            const checkboxes = document.querySelectorAll('input[type="checkbox"]');
+            checkboxes.forEach(cb => {
+                if (!(cb as HTMLInputElement).checked) {
+                    (cb as HTMLElement).click();
+                }
+            });
+        });
+        await new Promise(r => setTimeout(r, 2000));
+
+        // Step 10: Extract ALL comp data from the results table
+        log.log('EXTRACT', 'Extracting all comp data from results');
+
+        const extractedData = await page.evaluate(() => {
+            const comps: Array<{
+                address: string;
+                price: number;
+                sqft: number;
+                beds: number;
+                baths: number;
+                soldDate: string;
+                distance: string;
+                pricePerSqft: number;
+            }> = [];
+
+            // Try to find table rows with comp data
+            const rows = document.querySelectorAll('table tbody tr, .comp-row, [class*="comp"], [class*="result-row"]');
+
+            rows.forEach(row => {
+                const text = row.textContent || '';
+                const cells = row.querySelectorAll('td, .cell, span');
+
+                // Extract address - look for street number + name pattern
+                const addressMatch = text.match(/(\d+\s+[A-Za-z0-9\s]+(?:St|Ave|Rd|Dr|Ln|Ct|Way|Blvd|Circle|Terr?|Pl)[^,\d]*)/i);
+
+                // Extract price - look for dollar amounts
+                const priceMatch = text.match(/\$\s*([\d,]+)/);
+
+                // Extract sqft
+                const sqftMatch = text.match(/([\d,]+)\s*(?:sq\.?\s*ft|SF)/i);
+
+                // Extract beds/baths
+                const bedsMatch = text.match(/(\d+)\s*(?:bed|br)/i);
+                const bathsMatch = text.match(/([\d.]+)\s*(?:bath|ba)/i);
+
+                // Extract sold date
+                const dateMatch = text.match(/(\d{1,2}\/\d{1,2}\/\d{2,4})/);
+
+                // Extract distance
+                const distMatch = text.match(/([\d.]+)\s*mi/i);
+
+                if (addressMatch && priceMatch) {
+                    const price = parseInt(priceMatch[1].replace(/,/g, ''));
+                    const sqft = sqftMatch ? parseInt(sqftMatch[1].replace(/,/g, '')) : 0;
+
+                    if (price > 50000 && price < 10000000) {
+                        comps.push({
+                            address: addressMatch[1].trim(),
+                            price,
+                            sqft,
+                            beds: bedsMatch ? parseInt(bedsMatch[1]) : 0,
+                            baths: bathsMatch ? parseFloat(bathsMatch[1]) : 0,
+                            soldDate: dateMatch ? dateMatch[1] : 'Recent',
+                            distance: distMatch ? `${distMatch[1]} mi` : '',
+                            pricePerSqft: sqft > 0 ? Math.round(price / sqft) : 0,
+                        });
+                    }
+                }
+            });
+
+            // Also try extracting from page text if table extraction fails
+            if (comps.length === 0) {
+                const pageText = document.body.innerText;
+                const patterns = pageText.matchAll(/(\d+\s+[A-Za-z0-9\s]+(?:St|Ave|Rd|Dr|Ln|Ct|Way|Blvd)[^$]*)\$\s*([\d,]+)/gi);
+                for (const match of patterns) {
+                    const price = parseInt(match[2].replace(/,/g, ''));
+                    if (price > 50000 && price < 5000000) {
+                        comps.push({
+                            address: match[1].trim().slice(0, 100),
+                            price,
+                            sqft: 0,
+                            beds: 0,
+                            baths: 0,
+                            soldDate: 'Recent',
+                            distance: '',
+                            pricePerSqft: 0,
+                        });
+                    }
+                    if (comps.length >= 15) break;
+                }
+            }
+
+            // Get subject property data
+            const subject = {
+                sqft: 0,
+                beds: 0,
+                baths: 0,
+            };
+            const subjectText = document.body.innerText;
+            const subjectSqft = subjectText.match(/Living.*?([\d,]+)\s*(?:sq|SF)/i);
+            const subjectBeds = subjectText.match(/(\d+)\s*(?:Bed|BR)/i);
+            const subjectBaths = subjectText.match(/([\d.]+)\s*(?:Bath|BA)/i);
+            if (subjectSqft) subject.sqft = parseInt(subjectSqft[1].replace(/,/g, ''));
+            if (subjectBeds) subject.beds = parseInt(subjectBeds[1]);
+            if (subjectBaths) subject.baths = parseFloat(subjectBaths[1]);
+
+            return { comps, subject };
+        });
+
+        log.log('COMPS', `Found ${extractedData.comps.length} comparable sales`);
 
         await browser.close();
         browser = null;
 
-        // Step 8: Use Gemini AI to analyze comps and calculate ARV
-        if (comps.length > 0) {
-            const aiResult = await analyzeCompsWithGemini(address, comps, subjectData);
+        // Step 11: Use Gemini AI to analyze comps and calculate ARV
+        if (extractedData.comps.length > 0) {
+            const aiResult = await analyzeCompsWithGemini(
+                address,
+                extractedData.comps,
+                extractedData.subject
+            );
 
             if (aiResult.arv > 0) {
                 const result = {
@@ -594,8 +715,8 @@ async function scrapeNARRPR(address: string): Promise<{
                     low: Math.round(aiResult.arv * 0.95),
                     high: Math.round(aiResult.arv * 1.05),
                     url: 'https://www.narrpr.com',
-                    propertyData: subjectData,
-                    comps,
+                    propertyData: extractedData.subject,
+                    comps: extractedData.comps,
                     aiAnalysis: {
                         confidence: aiResult.confidence,
                         reasoning: aiResult.reasoning
