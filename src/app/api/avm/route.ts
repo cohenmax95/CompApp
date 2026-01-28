@@ -581,19 +581,37 @@ async function scrapeNARRPR(address: string): Promise<{
         // Step 9: Select all addresses (click checkboxes or select all)
         log.log('CMA', 'Selecting all comp addresses');
         await page.evaluate(() => {
-            // Try clicking "Select All" first
-            const selectAll = document.querySelector('input[type="checkbox"][id*="all"], label:contains("Select All"), button:contains("Select All")');
-            if (selectAll) {
-                (selectAll as HTMLElement).click();
-                return;
+            // Try clicking "Select All" checkbox or button first (using text search, not :contains)
+            let clicked = false;
+
+            // Look for checkbox with "all" in id
+            const allCheckbox = document.querySelector('input[type="checkbox"][id*="all"], input[type="checkbox"][name*="all"]') as HTMLInputElement;
+            if (allCheckbox && !allCheckbox.checked) {
+                allCheckbox.click();
+                clicked = true;
             }
-            // Otherwise check all checkboxes
-            const checkboxes = document.querySelectorAll('input[type="checkbox"]');
-            checkboxes.forEach(cb => {
-                if (!(cb as HTMLInputElement).checked) {
-                    (cb as HTMLElement).click();
+
+            // Also look for "Select All" button/label by text
+            if (!clicked) {
+                const elements = document.querySelectorAll('button, label, a, span');
+                for (const el of elements) {
+                    if ((el as HTMLElement).textContent?.toLowerCase().includes('select all')) {
+                        (el as HTMLElement).click();
+                        clicked = true;
+                        break;
+                    }
                 }
-            });
+            }
+
+            // If no select all found, check all individual checkboxes
+            if (!clicked) {
+                const checkboxes = document.querySelectorAll('input[type="checkbox"]');
+                checkboxes.forEach(cb => {
+                    if (!(cb as HTMLInputElement).checked) {
+                        (cb as HTMLElement).click();
+                    }
+                });
+            }
         });
         await new Promise(r => setTimeout(r, 2000));
 
