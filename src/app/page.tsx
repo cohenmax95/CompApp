@@ -303,6 +303,7 @@ Best Offer: ${formatCurrency(results.bestOffer.offerPrice)} (${results.bestStrat
                     <div className="lg:col-span-1 space-y-6">
                         <AVMPanel
                             address={state.address}
+                            onAddressChange={(address) => setState((s) => ({ ...s, address }))}
                             onApplyEstimate={handleApplyAVMEstimate}
                         />
 

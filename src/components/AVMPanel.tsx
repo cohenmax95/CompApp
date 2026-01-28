@@ -5,6 +5,7 @@ import { AVMResult, AVMFetchResult, formatAVMCurrency, PropertyData } from '@/li
 
 interface AVMPanelProps {
     address: string;
+    onAddressChange: (address: string) => void;
     onApplyEstimate: (arv: number, asIsValue: number, sqft?: number) => void;
 }
 
@@ -30,7 +31,7 @@ interface SourceState {
     value?: number;
 }
 
-const AVMPanel = forwardRef<AVMPanelRef, AVMPanelProps>(({ address, onApplyEstimate }, ref) => {
+const AVMPanel = forwardRef<AVMPanelRef, AVMPanelProps>(({ address, onAddressChange, onApplyEstimate }, ref) => {
     const [results, setResults] = useState<AVMResult[]>([]);
     const [propertyData, setPropertyData] = useState<PropertyData | null>(null);
     const [isLoading, setIsLoading] = useState(false);
@@ -232,9 +233,20 @@ const AVMPanel = forwardRef<AVMPanelRef, AVMPanelProps>(({ address, onApplyEstim
                 <div className="flex-1">
                     <h3 className="font-bold text-white text-lg">Property Value Lookup</h3>
                     <p className="text-sm text-slate-400">
-                        {hasResults ? `${foundCount} of 7 sources found` : 'Fetch estimates from 7 sources'}
+                        {hasResults ? `${foundCount} of 7 sources found` : 'Enter address and fetch values'}
                     </p>
                 </div>
+            </div>
+
+            {/* Address Input */}
+            <div className="mb-4">
+                <input
+                    type="text"
+                    value={address}
+                    onChange={(e) => onAddressChange(e.target.value)}
+                    placeholder="Enter property address..."
+                    className="w-full px-4 py-3 rounded-xl bg-slate-800/80 border border-slate-600/50 text-white placeholder-slate-500 focus:border-cyan-500/50 focus:ring-2 focus:ring-cyan-500/20 focus:outline-none transition-all text-base"
+                />
             </div>
 
             {/* Fetch Button - Prominent */}
@@ -281,10 +293,10 @@ const AVMPanel = forwardRef<AVMPanelRef, AVMPanelProps>(({ address, onApplyEstim
                         <div
                             key={source.id}
                             className={`flex flex-col items-center p-2 rounded-lg transition-all ${state.status === 'found'
-                                    ? 'bg-emerald-500/10 border border-emerald-500/30'
-                                    : state.status === 'fetching'
-                                        ? 'bg-cyan-500/10 border border-cyan-500/30'
-                                        : 'bg-slate-800/50 border border-slate-700/30'
+                                ? 'bg-emerald-500/10 border border-emerald-500/30'
+                                : state.status === 'fetching'
+                                    ? 'bg-cyan-500/10 border border-cyan-500/30'
+                                    : 'bg-slate-800/50 border border-slate-700/30'
                                 }`}
                         >
                             <div className="w-8 h-8 rounded-lg bg-slate-700/50 flex items-center justify-center text-xs font-bold text-slate-400 mb-1">
