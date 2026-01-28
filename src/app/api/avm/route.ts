@@ -343,6 +343,206 @@ async function fetchRentCast(address: string): Promise<{
 }
 
 // ============================================
+// ZILLOW HTTP API - Lightweight alternative (no browser!)
+// Uses Zillow's internal search API with stealth headers
+// ============================================
+async function fetchZillowHTTP(address: string): Promise<{
+    estimate?: number;
+    low?: number;
+    high?: number;
+    url: string;
+    propertyData?: Partial<PropertyData>;
+} | null> {
+    const log = new ScraperLogger('Zillow-HTTP');
+
+    try {
+        log.log('SEARCH', 'Searching Zillow via HTTP API');
+
+        // Use Zillow's search API endpoint
+        const searchUrl = `https://www.zillow.com/search/GetSearchPageState.htm?searchQueryState=${encodeURIComponent(JSON.stringify({
+            mapBounds: { north: 90, south: -90, east: 180, west: -180 },
+            filterState: { sortSelection: { value: "days" } },
+            isListVisible: true,
+            isMapVisible: false,
+            usersSearchTerm: address,
+            pagination: {},
+            mapZoom: 12
+        }))}&wants={"cat1":["listResults"]}&requestId=1`;
+
+        log.log('FETCH', 'Sending HTTP request');
+        const response = await fetch(searchUrl, {
+            method: 'GET',
+            headers: {
+                'Accept': 'application/json, text/plain, */*',
+                'Accept-Language': 'en-US,en;q=0.9',
+                'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
+                'Referer': 'https://www.zillow.com/',
+                'sec-ch-ua': '"Not A(Brand";v="99", "Google Chrome";v="121", "Chromium";v="121"',
+                'sec-ch-ua-mobile': '?0',
+                'sec-ch-ua-platform': '"macOS"',
+                'sec-fetch-dest': 'empty',
+                'sec-fetch-mode': 'cors',
+                'sec-fetch-site': 'same-origin',
+            },
+        });
+
+        log.log('RESPONSE', `HTTP ${response.status}`);
+
+        if (!response.ok) {
+            log.log('FAIL', `HTTP error: ${response.status}`);
+            log.finish(false);
+            return null;
+        }
+
+        const data = await response.json();
+        log.log('PARSE', 'Parsing response JSON');
+
+        // Extract property data from search results
+        const results = data?.cat1?.searchResults?.listResults || [];
+        log.log('RESULTS', `Found ${results.length} results`);
+
+        if (results.length > 0) {
+            const property = results[0];
+            const estimate = property.zestimate || property.price || property.unformattedPrice || 0;
+
+            if (estimate > 0) {
+                const result = {
+                    estimate,
+                    low: Math.round(estimate * 0.93),
+                    high: Math.round(estimate * 1.07),
+                    url: property.detailUrl ? `https://www.zillow.com${property.detailUrl}` : `https://www.zillow.com/homes/${encodeURIComponent(address)}_rb/`,
+                    propertyData: {
+                        sqft: property.livingArea || property.area || 0,
+                        beds: property.beds || 0,
+                        baths: property.baths || 0,
+                        yearBuilt: 0,
+                        lotSize: property.lotAreaValue || 0,
+                    },
+                };
+                log.finish(true, result);
+                return result;
+            }
+        }
+
+        log.finish(false);
+        return { url: `https://www.zillow.com/homes/${encodeURIComponent(address)}_rb/` };
+    } catch (error) {
+        log.error('EXCEPTION', error);
+        return null;
+    }
+}
+
+// ============================================
+// REDFIN HTTP API - Lightweight alternative (no browser!)
+// ============================================
+async function fetchRedfinHTTP(address: string): Promise<{
+    estimate?: number;
+    low?: number;
+    high?: number;
+    url: string;
+    propertyData?: Partial<PropertyData>;
+} | null> {
+    const log = new ScraperLogger('Redfin-HTTP');
+
+    try {
+        log.log('SEARCH', 'Searching Redfin via HTTP API');
+
+        // Use Redfin's autocomplete/search API
+        const searchUrl = `https://www.redfin.com/stingray/do/location-autocomplete?location=${encodeURIComponent(address)}&v=2`;
+
+        log.log('FETCH', 'Sending autocomplete request');
+        const response = await fetch(searchUrl, {
+            method: 'GET',
+            headers: {
+                'Accept': 'application/json, text/plain, */*',
+                'Accept-Language': 'en-US,en;q=0.9',
+                'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
+                'Referer': 'https://www.redfin.com/',
+            },
+        });
+
+        log.log('RESPONSE', `HTTP ${response.status}`);
+
+        if (!response.ok) {
+            log.log('FAIL', `HTTP error: ${response.status}`);
+            log.finish(false);
+            return null;
+        }
+
+        // Redfin returns JSON with a prefix, need to strip it
+        const text = await response.text();
+        const jsonStr = text.replace(/^[^{]*/, '');
+        const data = JSON.parse(jsonStr);
+
+        log.log('PARSE', 'Parsing response');
+
+        // Get the property URL from autocomplete
+        const exactMatch = data?.payload?.exactMatch || data?.payload?.sections?.[0]?.rows?.[0];
+
+        if (exactMatch?.url) {
+            log.log('PROPERTY_FOUND', 'Getting property details');
+
+            // Fetch the actual property page
+            const propertyUrl = `https://www.redfin.com${exactMatch.url}`;
+            const propertyRes = await fetch(propertyUrl, {
+                headers: {
+                    'Accept': 'text/html,application/xhtml+xml,application/xml',
+                    'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
+                    'Referer': 'https://www.redfin.com/',
+                },
+            });
+
+            if (propertyRes.ok) {
+                const html = await propertyRes.text();
+
+                // Extract estimate from HTML using regex
+                let estimate = 0;
+                const estimateMatch = html.match(/\"redfinEstimate\":\s*(\d+)/);
+                if (estimateMatch) {
+                    estimate = parseInt(estimateMatch[1]);
+                }
+
+                // Fall back to price patterns
+                if (!estimate) {
+                    const priceMatch = html.match(/\$([0-9,]+)\s*(?:Estimated|Redfin|Value)/i) ||
+                        html.match(/\"price\":\s*(\d+)/);
+                    if (priceMatch) {
+                        estimate = parseInt(priceMatch[1].replace(/,/g, ''));
+                    }
+                }
+
+                if (estimate > 50000) {
+                    // Extract property details
+                    const sqftMatch = html.match(/(\d+(?:,\d+)?)\s*(?:sq\s*ft|sqft)/i);
+                    const bedsMatch = html.match(/(\d+)\s*bed/i);
+                    const bathsMatch = html.match(/([\d.]+)\s*bath/i);
+
+                    const result = {
+                        estimate,
+                        low: Math.round(estimate * 0.93),
+                        high: Math.round(estimate * 1.07),
+                        url: propertyUrl,
+                        propertyData: {
+                            sqft: sqftMatch ? parseInt(sqftMatch[1].replace(/,/g, '')) : 0,
+                            beds: bedsMatch ? parseInt(bedsMatch[1]) : 0,
+                            baths: bathsMatch ? parseFloat(bathsMatch[1]) : 0,
+                        },
+                    };
+                    log.finish(true, result);
+                    return result;
+                }
+            }
+        }
+
+        log.finish(false);
+        return { url: `https://www.redfin.com/search?q=${encodeURIComponent(address)}` };
+    } catch (error) {
+        log.error('EXCEPTION', error);
+        return null;
+    }
+}
+
+// ============================================
 // ZILLOW SCRAPER - Uses __NEXT_DATA__ JSON extraction
 // ============================================
 async function scrapeZillow(address: string): Promise<{
@@ -1312,14 +1512,14 @@ export async function POST(request: NextRequest) {
         console.log('Starting AVM scraping for:', address);
 
         // Scrape sources in parallel batches of 3 for ~3x faster execution
-        // All scrapers now have address verification to prevent wrong property matching
+        // Using HTTP-only scrapers for better reliability (no Puppeteer bot detection)
         const sources = [
             { name: 'RentCast', fn: fetchRentCast, accuracy: { low: 0.97, high: 1.03 } },
-            { name: 'Zillow (Zestimate)', fn: scrapeZillow, accuracy: { low: 0.93, high: 1.07 } },
-            { name: 'Redfin Estimate', fn: scrapeRedfin, accuracy: { low: 0.95, high: 1.05 } },
+            { name: 'Zillow', fn: fetchZillowHTTP, accuracy: { low: 0.93, high: 1.07 } },
+            { name: 'Redfin', fn: fetchRedfinHTTP, accuracy: { low: 0.95, high: 1.05 } },
             { name: 'Realtor.com', fn: scrapeRealtor, accuracy: { low: 0.94, high: 1.06 } },
             { name: 'Trulia', fn: scrapeTrulia, accuracy: { low: 0.93, high: 1.07 } },
-            { name: 'ComeHome (HouseCanary)', fn: scrapeComeHome, accuracy: { low: 0.94, high: 1.06 } },
+            { name: 'ComeHome', fn: scrapeComeHome, accuracy: { low: 0.94, high: 1.06 } },
             { name: 'Bank of America', fn: scrapeBankOfAmerica, accuracy: { low: 0.95, high: 1.05 } },
             { name: 'Xome', fn: scrapeXome, accuracy: { low: 0.90, high: 1.10 } },
         ];
