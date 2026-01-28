@@ -343,8 +343,7 @@ async function fetchRentCast(address: string): Promise<{
 }
 
 // ============================================
-// ZILLOW HTTP API - Lightweight alternative (no browser!)
-// Uses Zillow's internal search API with stealth headers
+// ZILLOW HTTP - Scrapes property page directly
 // ============================================
 async function fetchZillowHTTP(address: string): Promise<{
     estimate?: number;
@@ -356,76 +355,76 @@ async function fetchZillowHTTP(address: string): Promise<{
     const log = new ScraperLogger('Zillow-HTTP');
 
     try {
-        log.log('SEARCH', 'Searching Zillow via HTTP API');
+        log.log('SEARCH', 'Fetching Zillow property page');
 
-        // Use Zillow's search API endpoint
-        const searchUrl = `https://www.zillow.com/search/GetSearchPageState.htm?searchQueryState=${encodeURIComponent(JSON.stringify({
-            mapBounds: { north: 90, south: -90, east: 180, west: -180 },
-            filterState: { sortSelection: { value: "days" } },
-            isListVisible: true,
-            isMapVisible: false,
-            usersSearchTerm: address,
-            pagination: {},
-            mapZoom: 12
-        }))}&wants={"cat1":["listResults"]}&requestId=1`;
+        // Format address for URL: "123 Main St, City, ST 12345" -> "123-main-st-city-st-12345"
+        const slugAddress = address.toLowerCase()
+            .replace(/[,\.]/g, '')
+            .replace(/\s+/g, '-')
+            .replace(/[^a-z0-9-]/g, '');
 
-        log.log('FETCH', 'Sending HTTP request');
+        const searchUrl = `https://www.zillow.com/homes/${encodeURIComponent(address)}_rb/`;
+
+        log.log('FETCH', 'Requesting property page');
         const response = await fetch(searchUrl, {
-            method: 'GET',
             headers: {
-                'Accept': 'application/json, text/plain, */*',
+                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
                 'Accept-Language': 'en-US,en;q=0.9',
-                'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36',
-                'Referer': 'https://www.zillow.com/',
-                'sec-ch-ua': '"Not A(Brand";v="99", "Google Chrome";v="121", "Chromium";v="121"',
-                'sec-ch-ua-mobile': '?0',
-                'sec-ch-ua-platform': '"macOS"',
-                'sec-fetch-dest': 'empty',
-                'sec-fetch-mode': 'cors',
-                'sec-fetch-site': 'same-origin',
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+                'Cache-Control': 'no-cache',
             },
         });
 
         log.log('RESPONSE', `HTTP ${response.status}`);
 
+        if (response.status === 403) {
+            log.log('BLOCKED', 'Zillow blocked request');
+            log.finish(false);
+            return { url: searchUrl };
+        }
+
         if (!response.ok) {
-            log.log('FAIL', `HTTP error: ${response.status}`);
             log.finish(false);
             return null;
         }
 
-        const data = await response.json();
-        log.log('PARSE', 'Parsing response JSON');
+        const html = await response.text();
+        log.log('PARSE', 'Extracting Zestimate from HTML');
 
-        // Extract property data from search results
-        const results = data?.cat1?.searchResults?.listResults || [];
-        log.log('RESULTS', `Found ${results.length} results`);
+        // Try multiple extraction patterns
+        let estimate = 0;
 
-        if (results.length > 0) {
-            const property = results[0];
-            const estimate = property.zestimate || property.price || property.unformattedPrice || 0;
+        // Pattern 1: Zestimate in JSON
+        const zestimateMatch = html.match(/"zestimate"\s*:\s*(\d+)/i);
+        if (zestimateMatch) {
+            estimate = parseInt(zestimateMatch[1]);
+        }
 
-            if (estimate > 0) {
-                const result = {
-                    estimate,
-                    low: Math.round(estimate * 0.93),
-                    high: Math.round(estimate * 1.07),
-                    url: property.detailUrl ? `https://www.zillow.com${property.detailUrl}` : `https://www.zillow.com/homes/${encodeURIComponent(address)}_rb/`,
-                    propertyData: {
-                        sqft: property.livingArea || property.area || 0,
-                        beds: property.beds || 0,
-                        baths: property.baths || 0,
-                        yearBuilt: 0,
-                        lotSize: property.lotAreaValue || 0,
-                    },
-                };
-                log.finish(true, result);
-                return result;
-            }
+        // Pattern 2: Price in meta tags
+        if (!estimate) {
+            const priceMatch = html.match(/property="product:price:amount"\s+content="(\d+)"/);
+            if (priceMatch) estimate = parseInt(priceMatch[1]);
+        }
+
+        // Pattern 3: Home value text
+        if (!estimate) {
+            const valueMatch = html.match(/Zestimate[^\$]*\$([0-9,]+)/i);
+            if (valueMatch) estimate = parseInt(valueMatch[1].replace(/,/g, ''));
+        }
+
+        if (estimate > 50000) {
+            const result = {
+                estimate,
+                low: Math.round(estimate * 0.93),
+                high: Math.round(estimate * 1.07),
+                url: searchUrl,
+            };
+            log.finish(true, result);
+            return result;
         }
 
         log.finish(false);
-        return { url: `https://www.zillow.com/homes/${encodeURIComponent(address)}_rb/` };
+        return { url: searchUrl };
     } catch (error) {
         log.error('EXCEPTION', error);
         return null;
@@ -637,17 +636,25 @@ async function fetchTruliaHTTP(address: string): Promise<{
     const log = new ScraperLogger('Trulia-HTTP');
 
     try {
-        log.log('SEARCH', 'Searching Trulia via HTTP (same backend as Zillow)');
+        log.log('SEARCH', 'Searching Trulia via property search');
 
-        // Trulia uses Zillow's backend - try their search
-        const searchUrl = `https://www.trulia.com/home_values/${encodeURIComponent(address.replace(/\s+/g, '-').replace(/,/g, ''))}`;
+        // Trulia property URL format: /p/state/city/street-address-zipcode/
+        const parts = address.split(',').map(s => s.trim());
+        const street = parts[0] || '';
+        const cityState = parts[1] || '';
+        const zip = parts[2]?.match(/\d{5}/)?.[0] || '';
+        const state = cityState.match(/\b([A-Z]{2})\b/)?.[1]?.toLowerCase() || 'fl';
+        const city = cityState.replace(/\s*[A-Z]{2}\s*/, '').trim().toLowerCase().replace(/\s+/g, '-');
+        const streetSlug = street.toLowerCase().replace(/\s+/g, '-').replace(/[^a-z0-9-]/g, '');
 
-        log.log('FETCH', 'Fetching Trulia page');
+        // Try property search page
+        const searchUrl = `https://www.trulia.com/${state}/${city}/`;
+
+        log.log('FETCH', 'Fetching Trulia city page');
         const response = await fetch(searchUrl, {
             headers: {
                 'Accept': 'text/html,application/xhtml+xml',
-                'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
-                'Referer': 'https://www.trulia.com/',
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
             },
         });
 
@@ -655,21 +662,21 @@ async function fetchTruliaHTTP(address: string): Promise<{
 
         if (!response.ok) {
             log.finish(false);
-            return null;
+            return { url: `https://www.trulia.com/home-search/${encodeURIComponent(address)}` };
         }
 
         const html = await response.text();
-        log.log('PARSE', 'Extracting estimate from HTML');
+        log.log('PARSE', 'Extracting estimate');
 
-        // Trulia uses similar patterns to Zillow
+        // Try to find property value in page
         let estimate = 0;
-        const pricePatterns = [
+        const patterns = [
             /"estimatedValue":\s*(\d+)/,
             /"price":\s*(\d+)/,
-            /\$([0-9,]+).*?(?:estimated|value)/i,
+            /\$([0-9,]+)\s*(?:Home|Value|Est)/i,
         ];
 
-        for (const pattern of pricePatterns) {
+        for (const pattern of patterns) {
             const match = html.match(pattern);
             if (match) {
                 estimate = parseInt(match[1].replace(/,/g, ''));
@@ -678,27 +685,18 @@ async function fetchTruliaHTTP(address: string): Promise<{
         }
 
         if (estimate > 50000) {
-            const sqftMatch = html.match(/(\d+(?:,\d+)?)\s*(?:sq\s*ft|sqft)/i);
-            const bedsMatch = html.match(/(\d+)\s*bed/i);
-            const bathsMatch = html.match(/([\d.]+)\s*bath/i);
-
             const result = {
                 estimate,
                 low: Math.round(estimate * 0.93),
                 high: Math.round(estimate * 1.07),
                 url: searchUrl,
-                propertyData: {
-                    sqft: sqftMatch ? parseInt(sqftMatch[1].replace(/,/g, '')) : 0,
-                    beds: bedsMatch ? parseInt(bedsMatch[1]) : 0,
-                    baths: bathsMatch ? parseFloat(bathsMatch[1]) : 0,
-                },
             };
             log.finish(true, result);
             return result;
         }
 
         log.finish(false);
-        return { url: searchUrl };
+        return { url: `https://www.trulia.com/home-search/${encodeURIComponent(address)}` };
     } catch (error) {
         log.error('EXCEPTION', error);
         return null;
@@ -1856,16 +1854,12 @@ export async function POST(request: NextRequest) {
 
         console.log('Starting AVM scraping for:', address);
 
-        // Scrape sources in parallel batches of 3 for ~3x faster execution
-        // ALL scrapers now use HTTP-only (no Puppeteer = no bot detection!)
+        // Only sources that work or at least return 200
+        // Blocked by 403: Zillow, Redfin, Trulia
+        // Return 404: ComeHome, BofA
         const sources = [
             { name: 'RentCast', fn: fetchRentCast, accuracy: { low: 0.97, high: 1.03 } },
-            { name: 'Zillow', fn: fetchZillowHTTP, accuracy: { low: 0.93, high: 1.07 } },
-            { name: 'Redfin', fn: fetchRedfinHTTP, accuracy: { low: 0.95, high: 1.05 } },
             { name: 'Realtor.com', fn: fetchRealtorHTTP, accuracy: { low: 0.94, high: 1.06 } },
-            { name: 'Trulia', fn: fetchTruliaHTTP, accuracy: { low: 0.93, high: 1.07 } },
-            { name: 'ComeHome', fn: fetchComeHomeHTTP, accuracy: { low: 0.94, high: 1.06 } },
-            { name: 'Bank of America', fn: fetchBofAHTTP, accuracy: { low: 0.95, high: 1.05 } },
             { name: 'Xome', fn: fetchXomeHTTP, accuracy: { low: 0.90, high: 1.10 } },
         ];
 
