@@ -522,10 +522,22 @@ async function scrapeNARRPR(address: string): Promise<{
 
         // Step 6: Look for CMA button and click it
         log.log('CMA', 'Looking for CMA button');
-        const cmaButton = await page.$('button:has-text("CMA"), a:has-text("CMA"), [data-testid*="cma"], .cma-button');
-        if (cmaButton) {
-            await cmaButton.click();
+        // Use evaluate to find button by text (CSS :has-text() is not standard)
+        const cmaFound = await page.evaluate(() => {
+            const buttons = document.querySelectorAll('button, a, [role="button"]');
+            for (const btn of buttons) {
+                if (btn.textContent?.toUpperCase().includes('CMA')) {
+                    (btn as HTMLElement).click();
+                    return true;
+                }
+            }
+            return false;
+        });
+        if (cmaFound) {
+            log.log('CMA', 'Clicked CMA button');
             await new Promise(r => setTimeout(r, 3000));
+        } else {
+            log.log('CMA', 'CMA button not found, continuing with page data');
         }
 
         // Step 7: Extract property data from page
