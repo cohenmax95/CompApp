@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useImperativeHandle, forwardRef } from 'react';
 import { AVMResult, AVMFetchResult, formatAVMCurrency, PropertyData } from '@/lib/avm';
+import AddressAutocomplete from './AddressAutocomplete';
 
 interface AVMPanelProps {
     address: string;
@@ -238,12 +239,12 @@ const AVMPanel = forwardRef<AVMPanelRef, AVMPanelProps>(({ address, onAddressCha
                 </div>
             </div>
 
-            {/* Address Input */}
+            {/* Address Input with Autocomplete */}
             <div className="mb-4">
-                <input
-                    type="text"
+                <AddressAutocomplete
                     value={address}
-                    onChange={(e) => onAddressChange(e.target.value)}
+                    onChange={onAddressChange}
+                    onEnter={fetchAVMs}
                     placeholder="Enter property address..."
                     className="w-full px-4 py-3 rounded-xl bg-slate-800/80 border border-slate-600/50 text-white placeholder-slate-500 focus:border-cyan-500/50 focus:ring-2 focus:ring-cyan-500/20 focus:outline-none transition-all text-base"
                 />
