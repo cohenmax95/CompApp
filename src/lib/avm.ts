@@ -7,6 +7,16 @@ export interface AVMResult {
     high: number;
     lastUpdated: string;
     url?: string;
+    comps?: Array<{
+        address: string;
+        price: number;
+        sqft?: number;
+        beds?: number;
+        baths?: number;
+        soldDate?: string;
+        distance?: string;
+        pricePerSqft?: number;
+    }>;
 }
 
 export interface PropertyData {

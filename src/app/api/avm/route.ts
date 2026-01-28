@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { parseAddress, AVMResult, AVMFetchResult, PropertyData } from '@/lib/avm';
 import puppeteer, { Browser, Page } from 'puppeteer';
+import fs from 'fs';
+import path from 'path';
 
 // Note: puppeteer-extra-plugin-stealth is incompatible with Next.js Turbopack
 // Using enhanced manual evasion techniques instead
@@ -16,7 +18,48 @@ const NARRPR_EMAIL = process.env.NARRPR_EMAIL || 'cohen.max.95@gmail.com';
 const NARRPR_PASSWORD = process.env.NARRPR_PASSWORD || 'Flhomebuyers123!';
 
 // Google Gemini API key for AI analysis
-const GEMINI_API_KEY = process.env.GEMINI_API_KEY || 'AIzaSyCGmwtuMS_kCVEO-6Xp0MjsnDicdtpduXs';
+const GEMINI_API_KEY = process.env.GEMINI_API_KEY || 'AIzaSyChFtt9TfHLPmdEdGpXQARxm5oqZRsHNQc';
+
+// NARRPR Debug Mode - Set to true to capture screenshots and page content
+const NARRPR_DEBUG = true;
+const NARRPR_DEBUG_DIR = path.join(process.cwd(), 'narrpr-debug');
+
+// Helper function to save debug screenshots and page content
+async function saveNARRPRDebug(page: Page, step: string, log: ScraperLogger): Promise<void> {
+    if (!NARRPR_DEBUG) return;
+
+    try {
+        // Create debug directory if it doesn't exist
+        if (!fs.existsSync(NARRPR_DEBUG_DIR)) {
+            fs.mkdirSync(NARRPR_DEBUG_DIR, { recursive: true });
+        }
+
+        const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
+        const baseName = `${timestamp}_${step}`;
+
+        // Save screenshot
+        const screenshotPath = path.join(NARRPR_DEBUG_DIR, `${baseName}.png`);
+        await page.screenshot({ path: screenshotPath, fullPage: true });
+        log.log('DEBUG', `Screenshot saved: ${screenshotPath}`);
+
+        // Save page HTML
+        const htmlPath = path.join(NARRPR_DEBUG_DIR, `${baseName}.html`);
+        const html = await page.content();
+        fs.writeFileSync(htmlPath, html);
+        log.log('DEBUG', `HTML saved: ${htmlPath}`);
+
+        // Save page text content (for regex debugging)
+        const textPath = path.join(NARRPR_DEBUG_DIR, `${baseName}.txt`);
+        const text = await page.evaluate(() => document.body.innerText);
+        fs.writeFileSync(textPath, text);
+        log.log('DEBUG', `Text saved: ${textPath}`);
+
+        // Log current URL
+        log.log('DEBUG', `Current URL: ${page.url()}`);
+    } catch (error) {
+        log.log('DEBUG_ERROR', `Failed to save debug: ${error}`);
+    }
+}
 
 // ============================================
 // BROWSER CONFIGURATION WITH STEALTH PLUGIN
@@ -191,8 +234,8 @@ async function withTimeout<T>(
     }
 }
 
-// Scraper timeout in milliseconds (30 seconds)
-const SCRAPER_TIMEOUT = 30000;
+// Scraper timeout in milliseconds (120 seconds - increased for NARRPR with retries)
+const SCRAPER_TIMEOUT = 120000;
 
 // ============================================
 // SCRAPER LOGGER - Detailed step-by-step timing for debugging
@@ -469,7 +512,53 @@ Respond in this EXACT JSON format:
     }
 }
 
+// Retry configuration for NARRPR
+const NARRPR_MAX_RETRIES = 3;
+const NARRPR_RETRY_DELAY_MS = 2000;
+
+// Main NARRPR scraper with retry logic
 async function scrapeNARRPR(address: string): Promise<{
+    estimate?: number;
+    low?: number;
+    high?: number;
+    url: string;
+    propertyData?: Partial<PropertyData>;
+    comps?: NARRPRComp[];
+    aiAnalysis?: { confidence: string; reasoning: string };
+} | null> {
+    const log = new ScraperLogger('NARRPR');
+
+    for (let attempt = 1; attempt <= NARRPR_MAX_RETRIES; attempt++) {
+        log.log('RETRY', `Attempt ${attempt}/${NARRPR_MAX_RETRIES}`);
+
+        try {
+            const result = await scrapeNARRPRAttempt(address);
+
+            // Check if we got a valid result with an estimate
+            if (result && result.estimate && result.estimate > 0) {
+                log.log('SUCCESS', `Got estimate on attempt ${attempt}: $${result.estimate.toLocaleString()}`);
+                return result;
+            }
+
+            // No estimate found - retry if we have attempts left
+            if (attempt < NARRPR_MAX_RETRIES) {
+                log.log('RETRY', `No estimate found, waiting ${NARRPR_RETRY_DELAY_MS}ms before retry...`);
+                await new Promise(r => setTimeout(r, NARRPR_RETRY_DELAY_MS * attempt)); // Exponential backoff
+            }
+        } catch (error) {
+            log.log('ERROR', `Attempt ${attempt} failed: ${error instanceof Error ? error.message : 'Unknown error'}`);
+            if (attempt < NARRPR_MAX_RETRIES) {
+                await new Promise(r => setTimeout(r, NARRPR_RETRY_DELAY_MS * attempt));
+            }
+        }
+    }
+
+    log.log('FAILED', `All ${NARRPR_MAX_RETRIES} attempts exhausted`);
+    return null;
+}
+
+// Single attempt of NARRPR scraper
+async function scrapeNARRPRAttempt(address: string): Promise<{
     estimate?: number;
     low?: number;
     high?: number;
@@ -533,77 +622,474 @@ async function scrapeNARRPR(address: string): Promise<{
         // Step 4: Wait for dashboard to load
         log.log('LOGIN', 'Waiting for dashboard');
         await page.waitForNavigation({ waitUntil: 'networkidle2', timeout: 30000 });
-
-        // Step 5: Search for property
-        log.log('SEARCH', `Searching for: ${address}`);
         await new Promise(r => setTimeout(r, 2000));
 
-        // Find and use the search input
-        const searchInput = await page.$('.location-input, input[type="search"], input[placeholder*="address"], input[placeholder*="City"]');
-        if (searchInput) {
-            await searchInput.click();
-            await searchInput.type(address, { delay: 30 });
-            await new Promise(r => setTimeout(r, 2000)); // Wait for autocomplete
-            await page.keyboard.press('Enter');
+        // Step 4.5: Handle "Another user detected" modal if present
+        log.log('MODAL', 'Checking for session conflict modal');
+        const modalClosed = await page.evaluate(() => {
+            // Look for the modal with "Another user detected" text
+            const modal = document.querySelector('[role="dialog"], .modal, [class*="modal"], [class*="dialog"]');
+            if (modal) {
+                const modalText = modal.textContent || '';
+                if (modalText.includes('Another user') || modalText.includes('signed out')) {
+                    // Find and click the Close button
+                    const closeBtn = modal.querySelector('button');
+                    if (closeBtn) {
+                        closeBtn.click();
+                        return true;
+                    }
+                }
+            }
+            // Also try clicking any visible "Close" button on the page
+            const allButtons = document.querySelectorAll('button');
+            for (const btn of allButtons) {
+                if (btn.textContent?.trim().toLowerCase() === 'close' && btn.offsetParent !== null) {
+                    btn.click();
+                    return true;
+                }
+            }
+            return false;
+        });
+        if (modalClosed) {
+            log.log('MODAL', 'Session conflict modal closed');
+            await new Promise(r => setTimeout(r, 1000));
         }
+        await saveNARRPRDebug(page, '01_dashboard', log);
 
-        // Wait for property page to load
-        log.log('PROPERTY', 'Waiting for property page');
-        await new Promise(r => setTimeout(r, 5000));
-
-        // Step 6: Click CMA tab
-        log.log('CMA', 'Clicking CMA tab');
-        const cmaTabClicked = await page.evaluate(() => {
-            // Look for CMA tab/link
-            const links = document.querySelectorAll('a, button, [role="tab"]');
+        // Step 5: Navigate to Property Search page first
+        log.log('SEARCH', 'Clicking Property Search link');
+        const propertySearchClicked = await page.evaluate(() => {
+            const links = document.querySelectorAll('a, button, [role="menuitem"]');
             for (const link of links) {
-                const text = (link as HTMLElement).textContent?.toUpperCase() || '';
-                if (text.includes('CMA') || text.includes('VALUATION')) {
+                const text = (link as HTMLElement).textContent?.trim() || '';
+                if (text === 'Property Search' || text.includes('Property Search')) {
                     (link as HTMLElement).click();
                     return true;
                 }
             }
             return false;
         });
-        if (cmaTabClicked) {
+        if (propertySearchClicked) {
+            log.log('SEARCH', 'Property Search clicked, waiting for search page');
             await new Promise(r => setTimeout(r, 3000));
         }
 
-        // Step 7: Click "Find Comps" button
-        log.log('CMA', 'Clicking Find Comps');
-        const findCompsClicked = await page.evaluate(() => {
-            const buttons = document.querySelectorAll('button, a, [role="button"]');
-            for (const btn of buttons) {
-                const text = (btn as HTMLElement).textContent?.toUpperCase() || '';
-                if (text.includes('FIND COMP') || text.includes('SEARCH FOR COMP')) {
-                    (btn as HTMLElement).click();
-                    return true;
+        // Step 5.5: Now search for the specific property
+        log.log('SEARCH', `Searching for: ${address}`);
+
+        // Find the location/address search input - look for inputs in the search area
+        const searchSelectors = [
+            'input[placeholder*="Address"]',
+            'input[placeholder*="address"]',
+            'input[placeholder*="Location"]',
+            'input[placeholder*="location"]',
+            'input[name*="location"]',
+            'input[name*="address"]',
+            'input.location-input',
+            '[data-testid="location-input"] input',
+            'input[type="text"]:first-of-type',
+        ];
+
+        let searchInput = null;
+        for (const sel of searchSelectors) {
+            searchInput = await page.$(sel);
+            if (searchInput) {
+                log.log('SEARCH', `Found search input with selector: ${sel}`);
+                break;
+            }
+        }
+
+        if (searchInput) {
+            // Focus and clear the input
+            await searchInput.click();
+            await page.keyboard.down('Control');
+            await page.keyboard.press('a');
+            await page.keyboard.up('Control');
+            await page.keyboard.press('Backspace');
+            await new Promise(r => setTimeout(r, 500));
+
+            // Type the address slowly for autocomplete to work
+            await searchInput.type(address, { delay: 80 });
+            log.log('SEARCH', 'Address typed, waiting for autocomplete dropdown');
+
+            // Wait longer for autocomplete dropdown to appear
+            await new Promise(r => setTimeout(r, 4000));
+
+            // Take a screenshot to see what autocomplete shows
+            await saveNARRPRDebug(page, '01b_autocomplete', log);
+
+            // Try to click on the first autocomplete result
+            const autocompleteClicked = await page.evaluate((expectedAddr) => {
+                // Look for autocomplete dropdown items
+                const dropdownSelectors = [
+                    '.autocomplete-item',
+                    '.autocomplete-result',
+                    '.location-results li',
+                    '.location-dropdown li',
+                    '.search-results li',
+                    '[class*="autocomplete"] li',
+                    '[class*="dropdown"] li:not(.selected)',
+                    '[class*="suggestion"]',
+                    '.pac-item', // Google Places
+                    'ul[role="listbox"] li',
+                    '[role="option"]',
+                    'li.ng-star-inserted', // Angular dropdown
+                ];
+
+                for (const sel of dropdownSelectors) {
+                    const items = document.querySelectorAll(sel);
+                    if (items.length > 0) {
+                        for (const item of items) {
+                            const itemText = (item as HTMLElement).textContent || '';
+                            // Prefer items that contain part of the expected address
+                            if ((item as HTMLElement).offsetParent !== null) {
+                                (item as HTMLElement).click();
+                                return { clicked: true, selector: sel, text: itemText.substring(0, 50) };
+                            }
+                        }
+                    }
+                }
+
+                return { clicked: false, selector: 'none', text: '' };
+            }, address);
+
+            if (autocompleteClicked.clicked) {
+                log.log('SEARCH', `Clicked autocomplete: "${autocompleteClicked.text}" via ${autocompleteClicked.selector}`);
+                await new Promise(r => setTimeout(r, 3000));
+            } else {
+                log.log('SEARCH', 'No autocomplete dropdown found, pressing Enter to search');
+                await page.keyboard.press('Enter');
+                await new Promise(r => setTimeout(r, 3000));
+
+                // After Enter, we might be on a search results page - try to click first result
+                log.log('SEARCH', 'Looking for property in search results');
+                const resultClicked = await page.evaluate(() => {
+                    // Look for property cards or results
+                    const resultSelectors = [
+                        '.property-card',
+                        '.search-result',
+                        '.property-item',
+                        'a[href*="/property/"]',
+                        '[data-property-id]',
+                        '.listing-card',
+                        'tr.clickable',  // Table row results
+                    ];
+                    for (const sel of resultSelectors) {
+                        const results = document.querySelectorAll(sel);
+                        if (results.length > 0) {
+                            (results[0] as HTMLElement).click();
+                            return { clicked: true, selector: sel };
+                        }
+                    }
+                    return { clicked: false, selector: 'none' };
+                });
+
+                if (resultClicked.clicked) {
+                    log.log('SEARCH', `Clicked search result via ${resultClicked.selector}`);
+                    await new Promise(r => setTimeout(r, 5000));
                 }
             }
-            return false;
-        });
-        if (findCompsClicked) {
-            log.log('CMA', 'Find Comps clicked, waiting for search form');
-            await new Promise(r => setTimeout(r, 3000));
+        } else {
+            log.log('SEARCH', 'WARNING: Could not find search input!');
+            // Fallback: try pressing Tab to focus first input and type
+            await page.keyboard.press('Tab');
+            await page.keyboard.type(address, { delay: 50 });
+            await page.keyboard.press('Enter');
         }
 
-        // Step 8: Click "Search" button
-        log.log('CMA', 'Clicking Search button');
+        // Wait for property page to load (initial wait)
+        log.log('PROPERTY', 'Waiting for property page to load');
+        await new Promise(r => setTimeout(r, 5000));
+
+        // Wait for any loading indicators to disappear
+        log.log('PROPERTY', 'Waiting for page content to finish loading');
+        let loadingAttempts = 0;
+        while (loadingAttempts < 10) {
+            const hasLoading = await page.evaluate(() => {
+                const pageText = document.body.innerText;
+                const loadingCount = (pageText.match(/Loading\.\.\./g) || []).length;
+                return loadingCount > 3; // Allow some loading text but not too much
+            });
+            if (!hasLoading) {
+                log.log('PROPERTY', 'Page content loaded');
+                break;
+            }
+            loadingAttempts++;
+            log.log('PROPERTY', `Still loading... (attempt ${loadingAttempts}/10)`);
+            await new Promise(r => setTimeout(r, 2000));
+        }
+
+        // Step 5.5: Verify we're on a property page (not still on dashboard)
+        const pageVerification = await page.evaluate((expectedAddress) => {
+            const pageText = document.body.innerText;
+            const url = window.location.href;
+
+            // Check if we're on a property detail page - use text we actually saw in debug
+            const isPropertyPage = pageText.includes('Property Information') ||
+                pageText.includes('Property Facts') ||
+                pageText.includes('Pricing Tools') ||
+                pageText.includes('Additional Resources') ||
+                url.includes('/property');
+
+            // Check if the address appears on the page
+            const addressParts = expectedAddress.toLowerCase().split(',')[0].split(' ');
+            const hasAddress = addressParts.slice(0, 2).every((part: string) =>
+                pageText.toLowerCase().includes(part.toLowerCase())
+            );
+
+            return {
+                isPropertyPage,
+                hasAddress,
+                url,
+                pageSnippet: pageText.substring(0, 500)
+            };
+        }, address);
+
+        log.log('PROPERTY', `Page verification: isPropertyPage=${pageVerification.isPropertyPage}, hasAddress=${pageVerification.hasAddress}`);
+        log.log('PROPERTY', `Current URL: ${pageVerification.url}`);
+
+        if (!pageVerification.isPropertyPage) {
+            log.log('PROPERTY', 'Not on property page - may need to click a search result');
+            // Try clicking on property cards or search results
+            await page.evaluate(() => {
+                const propertyLinks = document.querySelectorAll('a[href*="property"], .property-card, [class*="property"]');
+                for (const link of propertyLinks) {
+                    if ((link as HTMLElement).offsetParent !== null) {
+                        (link as HTMLElement).click();
+                        return true;
+                    }
+                }
+                return false;
+            });
+            await new Promise(r => setTimeout(r, 5000));
+        }
+
+        await saveNARRPRDebug(page, '02_property_page', log);
+
+
+
+        // Step 6: Click CMA tab or "Create CMA" link
+        log.log('CMA', 'Looking for CMA tab/link');
+        const cmaTabClicked = await page.evaluate(() => {
+            // Look for CMA-related links including "Create CMA" which appears in nav
+            const links = document.querySelectorAll('a, button, [role="tab"], [role="menuitem"]');
+            for (const link of links) {
+                const text = (link as HTMLElement).textContent?.toUpperCase().trim() || '';
+                // Prioritize exact "CREATE CMA" match first
+                if (text === 'CREATE CMA' || text.includes('CREATE CMA')) {
+                    (link as HTMLElement).click();
+                    return { clicked: true, text };
+                }
+            }
+            // Fallback to partial matches
+            for (const link of links) {
+                const text = (link as HTMLElement).textContent?.toUpperCase() || '';
+                if (text.includes('CMA') || text.includes('VALUATION') || text.includes('COMPS')) {
+                    (link as HTMLElement).click();
+                    return { clicked: true, text };
+                }
+            }
+            return { clicked: false, text: '' };
+        });
+        if (cmaTabClicked.clicked) {
+            log.log('CMA', `CMA clicked via text: "${cmaTabClicked.text}"`);
+            await new Promise(r => setTimeout(r, 3000));
+            await saveNARRPRDebug(page, '03_cma_tab', log);
+        } else {
+            log.log('CMA', 'WARNING: Could not find CMA tab/link');
+        }
+
+
+        // Step 6.5: Click "Confirm Facts" button to enable Find Comps
+        // The Find Comps button is disabled until AreSubjectPropertyFactsConfirmed is true
+        log.log('CMA', 'Looking for Confirm Facts button (required to enable Find Comps)');
+
+        const confirmFactsClicked = await page.evaluate(() => {
+            // Look for a button/link with text "Confirm Facts"
+            const elements = document.querySelectorAll('button, a, [role="button"]');
+            for (const el of elements) {
+                const text = (el as HTMLElement).textContent?.trim() || '';
+                if (text === 'Confirm Facts' || text.includes('Confirm Facts')) {
+                    (el as HTMLElement).click();
+                    return { clicked: true, text };
+                }
+            }
+            return { clicked: false, text: '' };
+        });
+
+        if (confirmFactsClicked.clicked) {
+            log.log('CMA', `Confirm Facts clicked: "${confirmFactsClicked.text}"`);
+            await new Promise(r => setTimeout(r, 3000)); // Wait for modal to open
+
+            // Now click "Confirm Facts and Close" button in the modal
+            log.log('CMA', 'Looking for "Confirm Facts and Close" button in modal');
+            const confirmAndCloseClicked = await page.evaluate(() => {
+                const elements = document.querySelectorAll('button, a, [role="button"]');
+                for (const el of elements) {
+                    const text = (el as HTMLElement).textContent?.trim() || '';
+                    if (text.includes('Confirm Facts and Close') || text === 'Confirm and Close') {
+                        (el as HTMLElement).click();
+                        return { clicked: true, text };
+                    }
+                }
+                return { clicked: false, text: '' };
+            });
+
+            if (confirmAndCloseClicked.clicked) {
+                log.log('CMA', `Confirm and Close clicked: "${confirmAndCloseClicked.text}"`);
+                await new Promise(r => setTimeout(r, 3000)); // Wait for modal to close and button to enable
+            } else {
+                log.log('CMA', 'WARNING: Could not find Confirm Facts and Close button');
+            }
+        } else {
+            log.log('CMA', 'WARNING: Could not find Confirm Facts button');
+        }
+
+        await saveNARRPRDebug(page, '03b_after_confirm_facts', log);
+
+        // Check if Find Comps is now enabled
+        const findCompsEnabled = await page.evaluate(() => {
+            const btn = document.getElementById('Valuation_FindCompsBtn');
+            if (btn) {
+                return {
+                    found: true,
+                    classes: btn.className,
+                    isDisabled: btn.classList.contains('disabled'),
+                    text: btn.textContent?.trim()
+                };
+            }
+            return { found: false, classes: '', isDisabled: true, text: '' };
+        });
+
+        log.log('CMA', `Find Comps button status: ${JSON.stringify(findCompsEnabled)}`);
+
+
+        // Step 7: Click "Find Comps" button using scroll into view and proper click
+        log.log('CMA', 'Looking for Find Comps button');
+
+        // First scroll the button into view and get its handle
+        const findCompsButtonHandle = await page.evaluateHandle(() => {
+            const buttons = document.querySelectorAll('button, a, [role="button"], input[type="button"]');
+            for (const btn of buttons) {
+                const text = (btn as HTMLElement).textContent?.trim() || '';
+                if (text === 'Find Comps' || text.toUpperCase().includes('FIND COMP')) {
+                    // Scroll into view
+                    (btn as HTMLElement).scrollIntoView({ behavior: 'smooth', block: 'center' });
+                    return btn;
+                }
+            }
+            return null;
+        });
+
+        // Try to click using the evaluateHandle result - but use a simpler approach
+        let buttonClicked = false;
+
+        // Use page.$$ to get all buttons and find Find Comps
+        const allButtons = await page.$$('button, a');
+        for (const btn of allButtons) {
+            const text = await page.evaluate(el => el.textContent?.trim(), btn);
+            if (text === 'Find Comps') {
+                log.log('CMA', 'Found "Find Comps" button, scrolling and clicking...');
+
+                // Scroll into view
+                await page.evaluate(el => el.scrollIntoView({ behavior: 'smooth', block: 'center' }), btn);
+                await new Promise(r => setTimeout(r, 1000));
+
+                // Take screenshot before click
+                await saveNARRPRDebug(page, '04a_before_find_comps', log);
+
+                // Try multiple click approaches
+                // Approach 1: Direct JS dispatchEvent with MouseEvent (works better with React/Angular)
+                const clickResult = await page.evaluate(el => {
+                    // Try focus first
+                    (el as HTMLElement).focus();
+
+                    // Create and dispatch mousedown, mouseup, click events
+                    const mousedownEvent = new MouseEvent('mousedown', { bubbles: true, cancelable: true, view: window });
+                    const mouseupEvent = new MouseEvent('mouseup', { bubbles: true, cancelable: true, view: window });
+                    const clickEvent = new MouseEvent('click', { bubbles: true, cancelable: true, view: window });
+
+                    el.dispatchEvent(mousedownEvent);
+                    el.dispatchEvent(mouseupEvent);
+                    el.dispatchEvent(clickEvent);
+
+                    // Also try native click as backup
+                    (el as HTMLElement).click();
+
+                    return { dispatched: true, tagName: el.tagName, classes: el.className };
+                }, btn);
+                log.log('CMA', `Click dispatched: ${JSON.stringify(clickResult)}`);
+
+                // Approach 2: Also try Puppeteer click
+                await btn.click();
+                log.log('CMA', 'Also executed Puppeteer click');
+                buttonClicked = true;
+
+                // Wait for the comp selection page/modal to load
+                log.log('CMA', 'Waiting for comp selection page to load...');
+                await new Promise(r => setTimeout(r, 8000)); // Give it 8 seconds
+                break;
+            }
+        }
+
+        if (!buttonClicked) {
+            log.log('CMA', 'WARNING: Could not find Find Comps button');
+        }
+
+        // Check if page changed by looking for new content
+        const pageContent = await page.evaluate(() => {
+            return {
+                text: document.body.innerText.substring(0, 500),
+                url: window.location.href
+            };
+        });
+        log.log('CMA', `After Find Comps - URL: ${pageContent.url.substring(0, 80)}...`);
+
+        await saveNARRPRDebug(page, '04_find_comps', log);
+
+        // Step 8: Look for and click "Search" button in the comp search modal
+        log.log('CMA', 'Looking for Search button in comps modal');
+
+        // Wait for any modal or new content
+        await new Promise(r => setTimeout(r, 2000));
+
         const searchClicked = await page.evaluate(() => {
-            const buttons = document.querySelectorAll('button, input[type="submit"], [role="button"]');
+            // Look for Search button - might be in a modal or styled as anchor
+            // The NARRPR Search button is: <a id="VCSD_SearchBtn" class="button is-primary">Search</a>
+            const buttons = document.querySelectorAll('button, input[type="submit"], input[type="button"], a[role="button"], a.button, a.is-primary, #VCSD_SearchBtn');
             for (const btn of buttons) {
-                const text = (btn as HTMLElement).textContent?.toUpperCase() || '';
+                const text = (btn as HTMLElement).textContent?.trim().toUpperCase() || '';
                 const value = (btn as HTMLInputElement).value?.toUpperCase() || '';
-                if (text === 'SEARCH' || value === 'SEARCH' || text.includes('SEARCH COMP')) {
+                const id = (btn as HTMLElement).id || '';
+
+                // Match Search button but not navigation links
+                if (((text === 'SEARCH' || value === 'SEARCH' || text === 'SEARCH COMPS' || text.includes('SEARCH NOW') || id === 'VCSD_SearchBtn') &&
+                    (btn as HTMLElement).offsetParent !== null) &&
+                    !text.includes('PROPERTY SEARCH') && !text.includes('MAP SEARCH')) {
                     (btn as HTMLElement).click();
-                    return true;
+                    return { clicked: true, text: (btn as HTMLElement).textContent?.trim(), id };
                 }
             }
-            return false;
+
+            // Also try clicking the default/primary button in any modal
+            const primaryBtn = document.querySelector('.modal button.primary, .modal button[type="submit"], .dialog button.primary, [class*="modal"] button:first-of-type') as HTMLElement;
+            if (primaryBtn && primaryBtn.offsetParent !== null) {
+                primaryBtn.click();
+                return { clicked: true, text: primaryBtn.textContent?.trim(), id: '' };
+            }
+
+            return { clicked: false, text: '', id: '' };
         });
-        if (searchClicked) {
-            log.log('CMA', 'Search clicked, waiting for results');
-            await new Promise(r => setTimeout(r, 8000)); // Wait for comps to load
+
+        if (searchClicked.clicked) {
+            log.log('CMA', `Search clicked: "${searchClicked.text}"`);
+            log.log('CMA', 'Waiting for comp results to load...');
+            // Wait longer for comps to load - they often take time
+            await new Promise(r => setTimeout(r, 10000));
+            await saveNARRPRDebug(page, '05_search_results', log);
+        } else {
+            log.log('CMA', 'No Search button found - comps may already be visible or different workflow');
+            await new Promise(r => setTimeout(r, 5000));
         }
 
         // Step 9: Select all addresses (click checkboxes or select all)
@@ -642,6 +1128,7 @@ async function scrapeNARRPR(address: string): Promise<{
             }
         });
         await new Promise(r => setTimeout(r, 2000));
+        await saveNARRPRDebug(page, '06_before_extraction', log);
 
         // Step 10: Extract ALL comp data from the results table
         log.log('EXTRACT', 'Extracting all comp data from results');
@@ -658,51 +1145,41 @@ async function scrapeNARRPR(address: string): Promise<{
                 pricePerSqft: number;
             }> = [];
 
-            // NARRPR shows comps with pattern:
-            // Address line: "4760 NW 73rd Ave, Lauderhill, FL 33319"
-            // Data line: ".13 Mi. 72 days 11/5/2025 $530,000 $241 2,199 4 3 1987"
+            // Debug: count elements found
+            const debugCounts = {
+                selCompDivs: 0,
+                comp1Rows: 0,
+                addressesFound: 0,
+                pricesFound: 0,
+            };
 
-            const pageText = document.body.innerText;
+            // Use DOM-based extraction - comps are in <div class="selComp"> elements
+            // Structure: <div class="selComp" data-property-id="...">
+            //   <div class="bold marginTop5"><a>Address</a></div>
+            //   <div class="marginTop5">$500,000</div>
+            const compDivs = document.querySelectorAll('.selComp[data-property-id]');
+            debugCounts.selCompDivs = compDivs.length;
 
-            // Look for "Closed" properties (sold comps)
-            // Pattern matches: Address, then later in same block: distance, date, price, $/sqft, sqft, beds, baths, year
-            const closedPattern = /(\d+\s+(?:NW|NE|SW|SE|N|S|E|W)?\s*\d*[A-Za-z\s]+(?:St|Ave|Rd|Dr|Ln|Ct|Way|Blvd|Ter|Cir|Pl)[^,]*,\s*[A-Za-z\s]+,\s*FL\s*\d{5})[^\$]*?(\.\d+\s*Mi\.?)[^\$]*?(\d{1,2}\/\d{1,2}\/\d{4})[^\$]*?\$([,\d]+)\s*(?:Closed\s*Price)?\s*\$(\d+)\s*([,\d]+)\s*(\d+)\s*(\d+)\s*(\d{4})/gi;
+            compDivs.forEach((div) => {
+                try {
+                    // Extract address from the bold link
+                    const addressEl = div.querySelector('.bold a, .bold.marginTop5 a');
+                    // Use innerHTML to preserve br tags, then replace with comma
+                    const addressHtml = addressEl?.innerHTML || '';
+                    const addressText = addressHtml.replace(/<br\s*\/?>/gi, ', ').replace(/<[^>]*>/g, '').replace(/\s+/g, ' ').trim();
+                    const address = addressText;
+                    if (!address || !address.includes('FL')) return;
 
-            let match;
-            while ((match = closedPattern.exec(pageText)) !== null && comps.length < 20) {
-                const address = match[1].trim();
-                const distance = match[2].trim();
-                const soldDate = match[3];
-                const price = parseInt(match[4].replace(/,/g, ''));
-                const pricePerSqft = parseInt(match[5]);
-                const sqft = parseInt(match[6].replace(/,/g, ''));
-                const beds = parseInt(match[7]);
-                const baths = parseInt(match[8]);
+                    // Extract price from text containing $
+                    const allText = div.textContent || '';
+                    const priceMatch = allText.match(/\$([,\d]{6,})/);
+                    if (!priceMatch) return;
 
-                if (price > 50000 && price < 10000000 && !comps.some(c => c.address === address)) {
-                    comps.push({
-                        address,
-                        price,
-                        sqft,
-                        beds,
-                        baths,
-                        soldDate,
-                        distance,
-                        pricePerSqft,
-                    });
-                }
-            }
+                    const price = parseInt(priceMatch[1].replace(/,/g, ''));
+                    if (price < 100000 || price > 5000000) return;
 
-            // Fallback: simpler pattern for addresses with prices
-            if (comps.length === 0) {
-                // Try to find any address + price pattern
-                const simplePattern = /(\d+\s+[A-Za-z0-9\s]+(?:St|Ave|Rd|Dr|Ln|Ct|Way|Blvd|Ter|Cir)[^,]*,\s*[A-Za-z]+,\s*FL\s*\d{5})[^$]*?\$([,\d]+)/gi;
-
-                while ((match = simplePattern.exec(pageText)) !== null && comps.length < 15) {
-                    const address = match[1].trim();
-                    const price = parseInt(match[2].replace(/,/g, ''));
-
-                    if (price > 50000 && price < 5000000 && !comps.some(c => c.address === address)) {
+                    // Avoid duplicates
+                    if (!comps.some(c => c.address.includes(address.split(',')[0]))) {
                         comps.push({
                             address,
                             price,
@@ -714,6 +1191,85 @@ async function scrapeNARRPR(address: string): Promise<{
                             pricePerSqft: 0,
                         });
                     }
+                } catch (e) {
+                    // Skip this element on error
+                }
+            });
+
+            // Also try table-based extraction for the main results list
+            if (comps.length < 5) {
+                const compRows = document.querySelectorAll('tr.comp1, tr.comp.comp1');
+                debugCounts.comp1Rows = compRows.length;
+
+                compRows.forEach((row) => {
+                    try {
+                        const propertyId = row.getAttribute('data-property-id');
+                        const addressRow = document.querySelector(`tr.comp2[data-property-id="${propertyId}"], tr.comp.comp2[data-property-id="${propertyId}"]`);
+
+                        const addressEl = addressRow?.querySelector('.bold.address a, .address a');
+                        const address = addressEl?.textContent?.trim() || '';
+                        if (!address || !address.includes('FL')) return;
+
+                        // Get price from cells
+                        const cells = row.querySelectorAll('td');
+                        let price = 0;
+                        cells.forEach((cell) => {
+                            const text = cell.textContent?.trim() || '';
+                            const match = text.match(/^\$([,\d]{6,})$/);
+                            if (match) price = parseInt(match[1].replace(/,/g, ''));
+                        });
+
+                        if (price > 100000 && price < 5000000 && !comps.some(c => c.address === address)) {
+                            comps.push({
+                                address,
+                                price,
+                                sqft: 0,
+                                beds: 0,
+                                baths: 0,
+                                soldDate: 'Recent',
+                                distance: '',
+                                pricePerSqft: 0,
+                            });
+                        }
+                    } catch (e) {
+                        // Skip on error
+                    }
+                });
+            }
+
+            // Fallback: If DOM extraction fails, try text-based
+            if (comps.length === 0) {
+                const pageText = document.body.innerText;
+                const compBlocks = pageText.split(/(?=Closed\s*\/)/gi);
+
+                for (const block of compBlocks) {
+                    if (!block.includes('FL 33') && !block.includes('FL 34')) continue;
+
+                    const priceMatch = block.match(/\$([,\d]{6,})/);
+                    const dataMatch = block.match(/\$(\d+)\s+([,\d]+)\s+(\d+)\s+(\d+)\s+(\d{4})/);
+                    const addressMatch = block.match(/(\d+\s+[A-Za-z0-9\s]+(?:St|Ave|Rd|Dr|Ln|Ct|Way|Blvd|Ter|Cir|Pl)[^,]*,\s*[A-Za-z\s]+,\s*FL\s*\d{5})/i);
+                    const dateMatch = block.match(/(\d{1,2}\/\d{1,2}\/\d{4})/);
+                    const distMatch = block.match(/\.?(\d+\.?\d*)\s*Mi/i);
+
+                    if (priceMatch && addressMatch) {
+                        const price = parseInt(priceMatch[1].replace(/,/g, ''));
+                        const address = addressMatch[1].trim();
+
+                        if (price > 100000 && price < 5000000 && !comps.some(c => c.address === address)) {
+                            comps.push({
+                                address,
+                                price,
+                                sqft: dataMatch ? parseInt(dataMatch[2].replace(/,/g, '')) : 0,
+                                beds: dataMatch ? parseInt(dataMatch[3]) : 0,
+                                baths: dataMatch ? parseInt(dataMatch[4]) : 0,
+                                soldDate: dateMatch ? dateMatch[1] : 'Recent',
+                                distance: distMatch ? `.${distMatch[1]} Mi` : '',
+                                pricePerSqft: dataMatch ? parseInt(dataMatch[1]) : 0,
+                            });
+                        }
+                    }
+
+                    if (comps.length >= 20) break;
                 }
             }
 
@@ -731,9 +1287,13 @@ async function scrapeNARRPR(address: string): Promise<{
             if (subjectBeds) subject.beds = parseInt(subjectBeds[1]);
             if (subjectBaths) subject.baths = parseFloat(subjectBaths[1]);
 
-            return { comps, subject };
+            return { comps, subject, debugCounts };
         });
 
+        // Log debug counts to understand extraction failures
+        if (extractedData.debugCounts) {
+            log.log('DEBUG', `Extraction debug: selCompDivs=${extractedData.debugCounts.selCompDivs}, comp1Rows=${extractedData.debugCounts.comp1Rows}`);
+        }
         log.log('COMPS', `Found ${extractedData.comps.length} comparable sales`);
 
         await browser.close();
@@ -2290,7 +2850,7 @@ export async function POST(request: NextRequest) {
         // NARRPR uses real MLS data + Gemini AI for best accuracy
         // Other sources use Puppeteer scrapers (may be blocked)
         const sources = [
-            { name: 'RentCast', fn: fetchRentCast, accuracy: { low: 0.97, high: 1.03 } },
+            // { name: 'RentCast', fn: fetchRentCast, accuracy: { low: 0.97, high: 1.03 } }, // DISABLED - hit API limit
             { name: 'NARRPR', fn: scrapeNARRPR, accuracy: { low: 0.98, high: 1.02 } },
             { name: 'Zillow', fn: scrapeZillow, accuracy: { low: 0.93, high: 1.07 } },
             { name: 'Redfin', fn: scrapeRedfin, accuracy: { low: 0.95, high: 1.05 } },
@@ -2354,6 +2914,7 @@ export async function POST(request: NextRequest) {
                             high: result.high || Math.round(result.estimate * source.accuracy.high),
                             lastUpdated: new Date().toISOString(),
                             url: result.url,
+                            comps: result.comps || undefined,
                         });
                         errors.push(`✓ ${source.name} scraped`);
                     } else {
