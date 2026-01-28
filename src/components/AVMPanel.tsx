@@ -72,6 +72,10 @@ const AVMPanel = forwardRef<AVMPanelRef, AVMPanelProps>(({ address, onAddressCha
     const [isExpanded, setIsExpanded] = useState(true);
     const [sourceStates, setSourceStates] = useState<Record<string, SourceState>>({});
 
+    // Manual ARV override state
+    const [manualARV, setManualARV] = useState<string>('');
+    const [showManualEntry, setShowManualEntry] = useState(false);
+
     // History state
     const [history, setHistory] = useState<CompHistoryEntry[]>([]);
     const [showHistory, setShowHistory] = useState(false);
@@ -390,6 +394,16 @@ const AVMPanel = forwardRef<AVMPanelRef, AVMPanelProps>(({ address, onAddressCha
         }
     };
 
+    // Apply manual ARV override
+    const applyManualARV = () => {
+        const value = parseInt(manualARV.replace(/[^0-9]/g, ''));
+        if (value > 0) {
+            onApplyEstimate(value, Math.round(value * 0.9), propertyData?.sqft);
+            setManualARV('');
+            setShowManualEntry(false);
+        }
+    };
+
     const { bestEstimate, median } = calculateEstimates();
     const hasResults = results.length > 0;
     const foundCount = Object.values(sourceStates).filter(s => s.status === 'found').length;
@@ -560,6 +574,55 @@ const AVMPanel = forwardRef<AVMPanelRef, AVMPanelProps>(({ address, onAddressCha
                     </div>
                 </div>
             )}
+
+            {/* Manual ARV Entry Section */}
+            <div className="mb-4">
+                <button
+                    onClick={() => setShowManualEntry(!showManualEntry)}
+                    className="w-full flex items-center justify-between px-4 py-3 rounded-lg bg-slate-800/60 border border-slate-600/50 hover:border-slate-500/50 transition-all text-sm"
+                >
+                    <div className="flex items-center gap-2">
+                        <svg className="w-4 h-4 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                        </svg>
+                        <span className="text-slate-300">Manual ARV Override</span>
+                    </div>
+                    <svg className={`w-4 h-4 text-slate-400 transition-transform ${showManualEntry ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                    </svg>
+                </button>
+                {showManualEntry && (
+                    <div className="mt-2 p-4 rounded-lg bg-slate-800/80 border border-slate-600/50 animate-fade-in">
+                        <p className="text-xs text-slate-400 mb-3">Enter custom ARV if sources are unavailable or you prefer your own estimate</p>
+                        <div className="flex gap-2">
+                            <div className="relative flex-1">
+                                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">$</span>
+                                <input
+                                    type="text"
+                                    value={manualARV}
+                                    onChange={(e) => {
+                                        const val = e.target.value.replace(/[^0-9]/g, '');
+                                        if (val) {
+                                            setManualARV(parseInt(val).toLocaleString());
+                                        } else {
+                                            setManualARV('');
+                                        }
+                                    }}
+                                    placeholder="Enter amount..."
+                                    className="w-full pl-7 pr-3 py-2.5 rounded-lg bg-slate-900/80 border border-slate-600/50 text-white placeholder-slate-500 focus:border-amber-500/50 focus:ring-2 focus:ring-amber-500/20 focus:outline-none transition-all"
+                                />
+                            </div>
+                            <button
+                                onClick={applyManualARV}
+                                disabled={!manualARV}
+                                className="px-4 py-2.5 rounded-lg bg-amber-600 hover:bg-amber-500 disabled:bg-slate-700 disabled:text-slate-500 text-white font-medium transition-all"
+                            >
+                                Apply
+                            </button>
+                        </div>
+                    </div>
+                )}
+            </div>
 
             {/* Simple Source Status */}
             {isLoading && (
