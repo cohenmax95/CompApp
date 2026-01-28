@@ -15,6 +15,12 @@ export interface PropertyData {
     baths: number;
     yearBuilt: number;
     lotSize: number;
+    // Additional fields from RentCast API
+    propertyType?: string;
+    lastSaleDate?: string;
+    lastSalePrice?: number;
+    county?: string;
+    subdivision?: string;
 }
 
 export interface AVMFetchResult {

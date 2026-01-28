@@ -110,7 +110,106 @@ const AVMPanel = forwardRef<AVMPanelRef, AVMPanelProps>(({ address, onAddressCha
 
         setIsLoading(true);
         setError(null);
+        setResults([]);
+        setPropertyData(null);
 
+        // Initialize all sources to 'checking' state
+        const initialStates: Record<string, SourceState> = {};
+        AVM_SOURCES.forEach(s => {
+            initialStates[s.id] = { status: 'fetching' };
+        });
+        setSourceStates(initialStates);
+
+        try {
+            // Use streaming endpoint for real-time source updates
+            const eventSource = new EventSource(`/api/avm/stream?address=${encodeURIComponent(address)}`);
+            const collectedResults: AVMResult[] = [];
+            let collectedPropertyData: PropertyData | null = null;
+
+            eventSource.onmessage = (event) => {
+                try {
+                    const data = JSON.parse(event.data);
+                    console.log('Stream event:', data);
+
+                    // Handle completion signal
+                    if (data.source === '_complete') {
+                        eventSource.close();
+                        setIsLoading(false);
+                        return;
+                    }
+
+                    // Map source name to ID
+                    const sourceId = data.source.toLowerCase().replace(/[^a-z]/g, '').slice(0, 8);
+                    const matchedSource = AVM_SOURCES.find(s =>
+                        s.name.toLowerCase().includes(data.source.toLowerCase().split(' ')[0]) ||
+                        data.source.toLowerCase().includes(s.id)
+                    );
+
+                    if (matchedSource) {
+                        // Update source state
+                        setSourceStates(prev => ({
+                            ...prev,
+                            [matchedSource.id]: {
+                                status: data.status === 'found' ? 'found' :
+                                    data.status === 'error' ? 'not_found' :
+                                        data.status,
+                                value: data.estimate || undefined,
+                            }
+                        }));
+
+                        // Collect result if found
+                        if (data.status === 'found' && data.estimate) {
+                            collectedResults.push({
+                                source: data.source,
+                                estimate: data.estimate,
+                                low: data.low || Math.round(data.estimate * 0.95),
+                                high: data.high || Math.round(data.estimate * 1.05),
+                                lastUpdated: new Date().toISOString(),
+                                url: data.url || '',
+                            });
+                            setResults([...collectedResults]);
+
+                            // Update property data if provided
+                            if (data.propertyData && data.propertyData.sqft > 0) {
+                                collectedPropertyData = {
+                                    sqft: data.propertyData.sqft || 0,
+                                    beds: data.propertyData.beds || 0,
+                                    baths: data.propertyData.baths || 0,
+                                    yearBuilt: data.propertyData.yearBuilt || 0,
+                                    lotSize: data.propertyData.lotSize || 0,
+                                    propertyType: data.propertyData.propertyType,
+                                    lastSaleDate: data.propertyData.lastSaleDate,
+                                    lastSalePrice: data.propertyData.lastSalePrice,
+                                };
+                                setPropertyData(collectedPropertyData);
+                            }
+                        }
+                    }
+                } catch (e) {
+                    console.error('Error parsing stream event:', e);
+                }
+            };
+
+            eventSource.onerror = (e) => {
+                console.error('EventSource error:', e);
+                eventSource.close();
+                setIsLoading(false);
+
+                // If no results collected, fall back to regular API
+                if (collectedResults.length === 0) {
+                    fetchAVMsFallback();
+                }
+            };
+
+        } catch (err) {
+            console.error('Fetch error:', err);
+            setError(err instanceof Error ? err.message : 'An error occurred');
+            setIsLoading(false);
+        }
+    };
+
+    // Fallback to regular POST API if streaming fails
+    const fetchAVMsFallback = async () => {
         try {
             const response = await fetch('/api/avm', {
                 method: 'POST',
@@ -124,70 +223,24 @@ const AVMPanel = forwardRef<AVMPanelRef, AVMPanelProps>(({ address, onAddressCha
             }
 
             const data: AVMFetchResult = await response.json();
+            setResults(data.results);
+            setPropertyData(data.propertyData);
 
-            // If no real results, use mock data for demo/testing
-            let finalResults = data.results;
-            let finalPropertyData = data.propertyData;
-
-            if (data.results.length === 0) {
-                console.log('No live data - using demo estimates');
-                // Generate realistic mock data based on address
-                const baseValue = 350000 + Math.floor(Math.random() * 300000);
-                const variance = 0.08;
-
-                finalResults = [
-                    { source: 'Zillow (Zestimate)', estimate: baseValue, low: Math.round(baseValue * 0.93), high: Math.round(baseValue * 1.07), lastUpdated: new Date().toISOString(), url: `https://www.zillow.com/homes/${encodeURIComponent(address)}_rb/` },
-                    { source: 'Redfin Estimate', estimate: Math.round(baseValue * (1 + (Math.random() - 0.5) * variance)), low: Math.round(baseValue * 0.95), high: Math.round(baseValue * 1.05), lastUpdated: new Date().toISOString(), url: `https://www.redfin.com/` },
-                    { source: 'Realtor.com', estimate: Math.round(baseValue * (1 + (Math.random() - 0.5) * variance)), low: Math.round(baseValue * 0.94), high: Math.round(baseValue * 1.06), lastUpdated: new Date().toISOString(), url: `https://www.realtor.com/` },
-                    { source: 'Trulia', estimate: Math.round(baseValue * (1 + (Math.random() - 0.5) * variance)), low: Math.round(baseValue * 0.93), high: Math.round(baseValue * 1.07), lastUpdated: new Date().toISOString(), url: `https://www.trulia.com/` },
-                    { source: 'Eppraisal', estimate: Math.round(baseValue * (1 + (Math.random() - 0.5) * variance * 1.5)), low: Math.round(baseValue * 0.90), high: Math.round(baseValue * 1.10), lastUpdated: new Date().toISOString(), url: `https://www.eppraisal.com/` },
-                ];
-
-                finalPropertyData = {
-                    sqft: 1800 + Math.floor(Math.random() * 800),
-                    beds: 3 + Math.floor(Math.random() * 2),
-                    baths: 2,
-                    yearBuilt: 1990 + Math.floor(Math.random() * 25),
-                    lotSize: 6000 + Math.floor(Math.random() * 4000),
-                };
-            }
-
-            setResults(finalResults);
-            setPropertyData(finalPropertyData);
-
-            if (data.errors.length > 0) {
-                console.log('AVM notes:', data.errors);
-            }
-
-            if (finalResults.length > 0) {
-                const sorted = [...finalResults].sort((a, b) => a.estimate - b.estimate);
-                const estimates = sorted.map(r => r.estimate);
-
-                const mid = Math.floor(estimates.length / 2);
-                const median = estimates.length % 2 === 0
-                    ? Math.round((estimates[mid - 1] + estimates[mid]) / 2)
-                    : estimates[mid];
-
-                let bestEstimate = median;
-                if (estimates.length > 4) {
-                    const trimCount = Math.max(1, Math.floor(estimates.length * 0.125));
-                    const trimmed = estimates.slice(trimCount, estimates.length - trimCount);
-                    const trimmedMean = Math.round(trimmed.reduce((a, b) => a + b, 0) / trimmed.length);
-                    bestEstimate = Math.min(median, trimmedMean);
-                }
-
-                onApplyEstimate(bestEstimate, Math.round(bestEstimate * 0.9), finalPropertyData?.sqft);
-            }
-        } catch (err) {
-            setError(err instanceof Error ? err.message : 'Failed to fetch AVM data');
-            setResults([]);
-            setPropertyData(null);
-            // Reset states on error
-            const reset: Record<string, SourceState> = {};
+            // Update source states based on results
+            const newStates: Record<string, SourceState> = {};
             AVM_SOURCES.forEach(s => {
-                reset[s.id] = { status: 'pending' };
+                const result = data.results.find(r =>
+                    r.source.toLowerCase().includes(s.id) ||
+                    s.name.toLowerCase().includes(r.source.toLowerCase().split(' ')[0])
+                );
+                newStates[s.id] = result
+                    ? { status: 'found', value: result.estimate }
+                    : { status: 'not_found' };
             });
-            setSourceStates(reset);
+            setSourceStates(newStates);
+        } catch (err) {
+            console.error('Fallback fetch error:', err);
+            setError(err instanceof Error ? err.message : 'An error occurred');
         } finally {
             setIsLoading(false);
         }

@@ -148,8 +148,21 @@ async function fetchRentCast(address: string): Promise<{
     low?: number;
     high?: number;
     rentEstimate?: number;
+    rentLow?: number;
+    rentHigh?: number;
     url: string;
     propertyData?: Partial<PropertyData>;
+    comps?: Array<{
+        address: string;
+        price: number;
+        sqft: number;
+        beds: number;
+        baths: number;
+        correlation: number;
+        distance: number;
+        daysOld: number;
+    }>;
+    correlation?: number;
 } | null> {
     try {
         console.log('Fetching RentCast value estimate...');
@@ -170,10 +183,12 @@ async function fetchRentCast(address: string): Promise<{
         }
 
         const valueData = await valueRes.json();
-        console.log('RentCast value response:', JSON.stringify(valueData).slice(0, 200));
+        console.log('RentCast value response:', JSON.stringify(valueData).slice(0, 500));
 
-        // Also get rent estimate for future use
+        // Also get rent estimate (uses same credit tier for comprehensive data)
         let rentEstimate = 0;
+        let rentLow = 0;
+        let rentHigh = 0;
         try {
             const rentUrl = `https://api.rentcast.io/v1/avm/rent?address=${encodeURIComponent(address)}`;
             const rentRes = await fetch(rentUrl, {
@@ -185,8 +200,10 @@ async function fetchRentCast(address: string): Promise<{
             });
             if (rentRes.ok) {
                 const rentData = await rentRes.json();
-                rentEstimate = rentData.rent || rentData.rentHigh || 0;
-                console.log('RentCast rent estimate:', rentEstimate);
+                rentEstimate = rentData.rent || 0;
+                rentLow = rentData.rentRangeLow || 0;
+                rentHigh = rentData.rentRangeHigh || 0;
+                console.log('RentCast rent estimate:', rentEstimate, 'range:', rentLow, '-', rentHigh);
             }
         } catch (e) {
             console.log('RentCast rent API skipped:', e);
@@ -195,14 +212,37 @@ async function fetchRentCast(address: string): Promise<{
         if (valueData.price || valueData.priceHigh) {
             const estimate = valueData.price || Math.round((valueData.priceLow + valueData.priceHigh) / 2);
 
-            // Property details are in subjectProperty nested object
+            // Extract ALL available data from subjectProperty
             const subject = valueData.subjectProperty || {};
+
+            // Extract comparable sales (comps) - RentCast provides these with the value estimate
+            const comps = (valueData.comparables || []).map((comp: {
+                formattedAddress?: string;
+                price?: number;
+                squareFootage?: number;
+                bedrooms?: number;
+                bathrooms?: number;
+                correlation?: number;
+                distance?: number;
+                daysOld?: number;
+            }) => ({
+                address: comp.formattedAddress || '',
+                price: comp.price || 0,
+                sqft: comp.squareFootage || 0,
+                beds: comp.bedrooms || 0,
+                baths: comp.bathrooms || 0,
+                correlation: comp.correlation || 0,
+                distance: comp.distance || 0,
+                daysOld: comp.daysOld || 0,
+            }));
 
             return {
                 estimate,
                 low: valueData.priceRangeLow || Math.round(estimate * 0.95),
                 high: valueData.priceRangeHigh || Math.round(estimate * 1.05),
                 rentEstimate,
+                rentLow,
+                rentHigh,
                 url: `https://app.rentcast.io/app?address=${encodeURIComponent(address)}`,
                 propertyData: {
                     sqft: subject.squareFootage || 0,
@@ -210,7 +250,14 @@ async function fetchRentCast(address: string): Promise<{
                     baths: subject.bathrooms || 0,
                     yearBuilt: subject.yearBuilt || 0,
                     lotSize: subject.lotSize || 0,
+                    propertyType: subject.propertyType || '',
+                    lastSaleDate: subject.lastSaleDate || '',
+                    lastSalePrice: subject.lastSalePrice || 0,
+                    county: subject.county || '',
+                    subdivision: subject.subdivision || '',
                 },
+                comps,
+                correlation: valueData.correlation || 0,
             };
         }
 
