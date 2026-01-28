@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useImperativeHandle, forwardRef, useCallback } from 'react';
 import { AVMResult, AVMFetchResult, formatAVMCurrency, PropertyData } from '@/lib/avm';
+import { debugClick, debugAPI, debugHistory, debugError } from '@/lib/debug';
 import AddressAutocomplete from './AddressAutocomplete';
 
 interface AVMPanelProps {
@@ -124,7 +125,7 @@ const AVMPanel = forwardRef<AVMPanelRef, AVMPanelProps>(({ address, onAddressCha
 
     // Load a history entry
     const loadFromHistory = useCallback((entry: CompHistoryEntry) => {
-        console.log('[CompHistory] Loading entry:', entry.address);
+        debugHistory('Loading history entry', { address: entry.address, sources: entry.results.length });
         onAddressChange(entry.address);
         setResults(entry.results);
         setPropertyData(entry.propertyData);
@@ -208,9 +209,12 @@ const AVMPanel = forwardRef<AVMPanelRef, AVMPanelProps>(({ address, onAddressCha
 
     const fetchAVMs = async () => {
         if (!address.trim()) {
+            debugError('AVMPanel', 'No address provided');
             setError('Please enter a property address first');
             return;
         }
+
+        debugAPI('AVM Fetch Started', { address });
 
         setIsLoading(true);
         setError(null);
@@ -233,14 +237,16 @@ const AVMPanel = forwardRef<AVMPanelRef, AVMPanelProps>(({ address, onAddressCha
             eventSource.onmessage = (event) => {
                 try {
                     const data = JSON.parse(event.data);
-                    console.log('Stream event:', data);
+                    debugAPI('Stream event', { source: data.source, status: data.status });
 
                     // Handle completion signal
                     if (data.source === '_complete') {
+                        debugAPI('Stream complete', { totalResults: collectedResults.length });
                         eventSource.close();
                         setIsLoading(false);
                         // Save to history
                         if (collectedResults.length > 0) {
+                            debugHistory('Saving search', { address, count: collectedResults.length });
                             addToHistory(address, collectedResults, collectedPropertyData);
                         }
                         return;
