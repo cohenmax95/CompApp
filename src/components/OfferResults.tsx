@@ -63,7 +63,7 @@ export default function OfferResultsDisplay({ results, hasInputs }: OfferResults
         <div className="space-y-6">
             {/* Summary Header */}
             {nonNovationBest && nonNovationBest !== 'None viable' && (
-                <div className="glass-card p-5 bg-gradient-to-r from-blue-900/30 to-purple-900/30 border-blue-500/30">
+                <div className="glass-card p-5 bg-gradient-to-r from-blue-900/30 to-purple-900/30 border-blue-500/30 hero-glow">
                     <div className="flex items-center justify-between flex-wrap gap-4">
                         <div>
                             <p className="text-sm text-blue-300">Best Exit Strategy</p>
