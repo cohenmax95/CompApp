@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, useImperativeHandle, forwardRef } from 'react';
+import { useState, useEffect, useImperativeHandle, forwardRef, useCallback } from 'react';
 import { AVMResult, AVMFetchResult, formatAVMCurrency, PropertyData } from '@/lib/avm';
 import AddressAutocomplete from './AddressAutocomplete';
 
@@ -12,6 +12,35 @@ interface AVMPanelProps {
 
 export interface AVMPanelRef {
     fetchAVMs: () => void;
+}
+
+// Comp History Entry - saved to localStorage
+interface CompHistoryEntry {
+    id: string;
+    address: string;
+    timestamp: string;
+    results: AVMResult[];
+    propertyData: PropertyData | null;
+    medianEstimate: number;
+}
+
+const HISTORY_STORAGE_KEY = 'compapp_avm_history';
+const MAX_HISTORY_ENTRIES = 50;
+
+// Helper to format relative time
+function getTimeAgo(date: Date): string {
+    const now = new Date();
+    const diffMs = now.getTime() - date.getTime();
+    const diffMins = Math.floor(diffMs / 60000);
+    const diffHours = Math.floor(diffMs / 3600000);
+    const diffDays = Math.floor(diffMs / 86400000);
+
+    if (diffMins < 1) return 'just now';
+    if (diffMins < 60) return `${diffMins}m ago`;
+    if (diffHours < 24) return `${diffHours}h ago`;
+    if (diffDays === 1) return 'yesterday';
+    if (diffDays < 7) return `${diffDays}d ago`;
+    return date.toLocaleDateString();
 }
 
 // All AVM sources we fetch from (with address verification for accuracy)
@@ -41,6 +70,81 @@ const AVMPanel = forwardRef<AVMPanelRef, AVMPanelProps>(({ address, onAddressCha
     const [error, setError] = useState<string | null>(null);
     const [isExpanded, setIsExpanded] = useState(true);
     const [sourceStates, setSourceStates] = useState<Record<string, SourceState>>({});
+
+    // History state
+    const [history, setHistory] = useState<CompHistoryEntry[]>([]);
+    const [showHistory, setShowHistory] = useState(false);
+
+    // Load history from localStorage on mount
+    useEffect(() => {
+        try {
+            const saved = localStorage.getItem(HISTORY_STORAGE_KEY);
+            if (saved) {
+                const parsed = JSON.parse(saved) as CompHistoryEntry[];
+                setHistory(parsed);
+                console.log('[CompHistory] Loaded', parsed.length, 'history entries');
+            }
+        } catch (e) {
+            console.error('[CompHistory] Failed to load history:', e);
+        }
+    }, []);
+
+    // Save history to localStorage whenever it changes
+    const saveHistory = useCallback((entries: CompHistoryEntry[]) => {
+        try {
+            const trimmed = entries.slice(0, MAX_HISTORY_ENTRIES);
+            localStorage.setItem(HISTORY_STORAGE_KEY, JSON.stringify(trimmed));
+            setHistory(trimmed);
+            console.log('[CompHistory] Saved', trimmed.length, 'entries');
+        } catch (e) {
+            console.error('[CompHistory] Failed to save history:', e);
+        }
+    }, []);
+
+    // Add a new entry to history (called after successful fetch)
+    const addToHistory = useCallback((addr: string, res: AVMResult[], propData: PropertyData | null) => {
+        if (res.length === 0) return;
+
+        const estimates = res.map(r => r.estimate).sort((a, b) => a - b);
+        const median = estimates[Math.floor(estimates.length / 2)];
+
+        const newEntry: CompHistoryEntry = {
+            id: Date.now().toString(),
+            address: addr,
+            timestamp: new Date().toISOString(),
+            results: res,
+            propertyData: propData,
+            medianEstimate: median,
+        };
+
+        // Remove any existing entry for same address, add new one at top
+        const filtered = history.filter(h => h.address.toLowerCase() !== addr.toLowerCase());
+        saveHistory([newEntry, ...filtered]);
+    }, [history, saveHistory]);
+
+    // Load a history entry
+    const loadFromHistory = useCallback((entry: CompHistoryEntry) => {
+        console.log('[CompHistory] Loading entry:', entry.address);
+        onAddressChange(entry.address);
+        setResults(entry.results);
+        setPropertyData(entry.propertyData);
+        setShowHistory(false);
+
+        // Update source states
+        const newStates: Record<string, SourceState> = {};
+        AVM_SOURCES.forEach(s => {
+            const result = entry.results.find(r =>
+                r.source.toLowerCase().includes(s.id) ||
+                s.name.toLowerCase().includes(r.source.toLowerCase().split(' ')[0])
+            );
+            if (result) {
+                newStates[s.id] = { status: 'found', value: result.estimate };
+            } else {
+                newStates[s.id] = { status: 'not_found' };
+            }
+        });
+        setSourceStates(newStates);
+    }, [onAddressChange]);
 
     // Initialize source states
     useEffect(() => {
@@ -135,6 +239,10 @@ const AVMPanel = forwardRef<AVMPanelRef, AVMPanelProps>(({ address, onAddressCha
                     if (data.source === '_complete') {
                         eventSource.close();
                         setIsLoading(false);
+                        // Save to history
+                        if (collectedResults.length > 0) {
+                            addToHistory(address, collectedResults, collectedPropertyData);
+                        }
                         return;
                     }
 
@@ -319,7 +427,86 @@ const AVMPanel = forwardRef<AVMPanelRef, AVMPanelProps>(({ address, onAddressCha
                         {hasResults ? `${foundCount} of 7 sources found` : 'Enter address and fetch values'}
                     </p>
                 </div>
+                {/* History Button */}
+                <div className="relative">
+                    <button
+                        onClick={() => setShowHistory(!showHistory)}
+                        className={`p-2 rounded-lg transition-all ${showHistory
+                            ? 'bg-cyan-500/30 text-cyan-300'
+                            : 'bg-slate-800/60 text-slate-400 hover:text-white hover:bg-slate-700/60'
+                            }`}
+                        title={`History (${history.length})`}
+                    >
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                        </svg>
+                    </button>
+                    {history.length > 0 && !showHistory && (
+                        <span className="absolute -top-1 -right-1 w-4 h-4 bg-cyan-500 rounded-full text-xs flex items-center justify-center text-white font-bold">
+                            {history.length > 9 ? '9+' : history.length}
+                        </span>
+                    )}
+                </div>
             </div>
+
+            {/* History Dropdown */}
+            {showHistory && history.length > 0 && (
+                <div className="mb-4 bg-slate-800/80 rounded-xl border border-slate-600/50 overflow-hidden">
+                    <div className="px-3 py-2 bg-slate-700/50 border-b border-slate-600/50 flex items-center justify-between">
+                        <span className="text-sm font-medium text-slate-300">Search History</span>
+                        <span className="text-xs text-slate-500">{history.length} saved</span>
+                    </div>
+                    <div className="max-h-60 overflow-y-auto">
+                        {history.map((entry) => {
+                            const date = new Date(entry.timestamp);
+                            const timeAgo = getTimeAgo(date);
+                            return (
+                                <div
+                                    key={entry.id}
+                                    className="px-3 py-2 border-b border-slate-700/50 last:border-0 hover:bg-slate-700/50 transition-colors cursor-pointer group"
+                                    onClick={() => loadFromHistory(entry)}
+                                >
+                                    <div className="flex items-start justify-between gap-2">
+                                        <div className="flex-1 min-w-0">
+                                            <p className="text-sm text-white truncate">{entry.address}</p>
+                                            <div className="flex items-center gap-2 mt-0.5">
+                                                <span className="text-xs text-emerald-400 font-medium">
+                                                    ${entry.medianEstimate.toLocaleString()}
+                                                </span>
+                                                <span className="text-xs text-slate-500">•</span>
+                                                <span className="text-xs text-slate-500">{timeAgo}</span>
+                                                <span className="text-xs text-slate-500">•</span>
+                                                <span className="text-xs text-slate-500">{entry.results.length} sources</span>
+                                            </div>
+                                        </div>
+                                        <button
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                onAddressChange(entry.address);
+                                                setShowHistory(false);
+                                                // Re-fetch fresh data
+                                                setTimeout(() => fetchAVMs(), 100);
+                                            }}
+                                            className="opacity-0 group-hover:opacity-100 p-1.5 rounded bg-cyan-500/20 text-cyan-400 hover:bg-cyan-500/40 transition-all text-xs"
+                                            title="Refresh"
+                                        >
+                                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
+                                            </svg>
+                                        </button>
+                                    </div>
+                                </div>
+                            );
+                        })}
+                    </div>
+                </div>
+            )}
+            {showHistory && history.length === 0 && (
+                <div className="mb-4 p-4 bg-slate-800/60 rounded-xl text-center">
+                    <p className="text-sm text-slate-400">No search history yet</p>
+                    <p className="text-xs text-slate-500 mt-1">Searches are automatically saved</p>
+                </div>
+            )}
 
             {/* Address Input with Autocomplete */}
             <div className="mb-4">
