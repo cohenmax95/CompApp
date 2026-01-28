@@ -12,6 +12,24 @@ export interface AVMPanelRef {
     fetchAVMs: () => void;
 }
 
+// All AVM sources we fetch from
+const AVM_SOURCES = [
+    { id: 'zillow', name: 'Zillow', icon: 'Z' },
+    { id: 'redfin', name: 'Redfin', icon: 'R' },
+    { id: 'realtor', name: 'Realtor', icon: 'R' },
+    { id: 'trulia', name: 'Trulia', icon: 'T' },
+    { id: 'comehome', name: 'ComeHome', icon: 'C' },
+    { id: 'bofa', name: 'BofA', icon: 'B' },
+    { id: 'xome', name: 'Xome', icon: 'X' },
+];
+
+type SourceStatus = 'pending' | 'fetching' | 'found' | 'not_found';
+
+interface SourceState {
+    status: SourceStatus;
+    value?: number;
+}
+
 const AVMPanel = forwardRef<AVMPanelRef, AVMPanelProps>(({ address, onApplyEstimate }, ref) => {
     const [results, setResults] = useState<AVMResult[]>([]);
     const [propertyData, setPropertyData] = useState<PropertyData | null>(null);
@@ -19,14 +37,30 @@ const AVMPanel = forwardRef<AVMPanelRef, AVMPanelProps>(({ address, onApplyEstim
     const [loadingProgress, setLoadingProgress] = useState(0);
     const [error, setError] = useState<string | null>(null);
     const [isExpanded, setIsExpanded] = useState(false);
+    const [sourceStates, setSourceStates] = useState<Record<string, SourceState>>({});
 
-    // Animate loading progress
+    // Initialize source states
+    useEffect(() => {
+        const initial: Record<string, SourceState> = {};
+        AVM_SOURCES.forEach(s => {
+            initial[s.id] = { status: 'pending' };
+        });
+        setSourceStates(initial);
+    }, []);
+
+    // Animate loading progress and simulate source updates
     useEffect(() => {
         if (isLoading) {
             setLoadingProgress(0);
+            // Set all sources to fetching
+            const fetching: Record<string, SourceState> = {};
+            AVM_SOURCES.forEach(s => {
+                fetching[s.id] = { status: 'fetching' };
+            });
+            setSourceStates(fetching);
+
             const interval = setInterval(() => {
                 setLoadingProgress(prev => {
-                    // Progress accelerates then slows near end (never quite reaches 100 until done)
                     if (prev < 30) return prev + 8;
                     if (prev < 60) return prev + 5;
                     if (prev < 85) return prev + 2;
@@ -37,13 +71,30 @@ const AVMPanel = forwardRef<AVMPanelRef, AVMPanelProps>(({ address, onApplyEstim
             return () => clearInterval(interval);
         } else {
             setLoadingProgress(100);
-            // Reset after animation completes
             const timeout = setTimeout(() => setLoadingProgress(0), 500);
             return () => clearTimeout(timeout);
         }
     }, [isLoading]);
 
-    // Expose fetchAVMs to parent via ref
+    // Update source states when results change
+    useEffect(() => {
+        if (results.length > 0 && !isLoading) {
+            const newStates: Record<string, SourceState> = {};
+            AVM_SOURCES.forEach(s => {
+                const result = results.find(r =>
+                    r.source.toLowerCase().includes(s.id) ||
+                    s.name.toLowerCase().includes(r.source.toLowerCase().split(' ')[0])
+                );
+                if (result) {
+                    newStates[s.id] = { status: 'found', value: result.estimate };
+                } else {
+                    newStates[s.id] = { status: 'not_found' };
+                }
+            });
+            setSourceStates(newStates);
+        }
+    }, [results, isLoading]);
+
     useImperativeHandle(ref, () => ({
         fetchAVMs
     }));
@@ -77,18 +128,15 @@ const AVMPanel = forwardRef<AVMPanelRef, AVMPanelProps>(({ address, onApplyEstim
                 console.log('AVM notes:', data.errors);
             }
 
-            // Auto-apply estimates after successful fetch
             if (data.results.length > 0) {
                 const sorted = [...data.results].sort((a, b) => a.estimate - b.estimate);
                 const estimates = sorted.map(r => r.estimate);
 
-                // Calculate median
                 const mid = Math.floor(estimates.length / 2);
                 const median = estimates.length % 2 === 0
                     ? Math.round((estimates[mid - 1] + estimates[mid]) / 2)
                     : estimates[mid];
 
-                // Calculate trimmed mean for 5+ results
                 let bestEstimate = median;
                 if (estimates.length > 4) {
                     const trimCount = Math.max(1, Math.floor(estimates.length * 0.125));
@@ -97,33 +145,34 @@ const AVMPanel = forwardRef<AVMPanelRef, AVMPanelProps>(({ address, onApplyEstim
                     bestEstimate = Math.min(median, trimmedMean);
                 }
 
-                // Auto-apply: ARV = bestEstimate, As-Is = 90% of ARV, Sqft from property data
                 onApplyEstimate(bestEstimate, Math.round(bestEstimate * 0.9), data.propertyData?.sqft);
             }
         } catch (err) {
             setError(err instanceof Error ? err.message : 'Failed to fetch AVM data');
             setResults([]);
             setPropertyData(null);
+            // Reset states on error
+            const reset: Record<string, SourceState> = {};
+            AVM_SOURCES.forEach(s => {
+                reset[s.id] = { status: 'pending' };
+            });
+            setSourceStates(reset);
         } finally {
             setIsLoading(false);
         }
     };
 
-    // Calculate estimates using spreadsheet methodology:
-    // Remove highest and lowest values (outliers), then average the middle values
     const calculateEstimates = () => {
         if (results.length === 0) return { bestEstimate: 0, median: 0 };
 
         const sorted = [...results].sort((a, b) => a.estimate - b.estimate);
         const estimates = sorted.map(r => r.estimate);
 
-        // Median
         const mid = Math.floor(estimates.length / 2);
         const median = estimates.length % 2 === 0
             ? Math.round((estimates[mid - 1] + estimates[mid]) / 2)
             : estimates[mid];
 
-        // Trimmed mean: exclude top and bottom ~12.5% (like spreadsheet)
         if (estimates.length <= 4) {
             return { bestEstimate: median, median };
         }
@@ -131,8 +180,6 @@ const AVMPanel = forwardRef<AVMPanelRef, AVMPanelProps>(({ address, onApplyEstim
         const trimCount = Math.max(1, Math.floor(estimates.length * 0.125));
         const trimmed = estimates.slice(trimCount, estimates.length - trimCount);
         const trimmedMean = Math.round(trimmed.reduce((a, b) => a + b, 0) / trimmed.length);
-
-        // Use the lesser of median and trimmed mean (conservative, like spreadsheet)
         const bestEstimate = Math.min(median, trimmedMean);
 
         return { bestEstimate, median };
@@ -147,151 +194,189 @@ const AVMPanel = forwardRef<AVMPanelRef, AVMPanelProps>(({ address, onApplyEstim
 
     const { bestEstimate, median } = calculateEstimates();
     const hasResults = results.length > 0;
+    const foundCount = Object.values(sourceStates).filter(s => s.status === 'found').length;
+
+    // Status indicator component
+    const StatusIcon = ({ status }: { status: SourceStatus }) => {
+        switch (status) {
+            case 'fetching':
+                return (
+                    <div className="w-4 h-4 border-2 border-cyan-400 border-t-transparent rounded-full animate-spin" />
+                );
+            case 'found':
+                return (
+                    <svg className="w-4 h-4 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={3} d="M5 13l4 4L19 7" />
+                    </svg>
+                );
+            case 'not_found':
+                return (
+                    <svg className="w-4 h-4 text-slate-500" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 12H4" />
+                    </svg>
+                );
+            default:
+                return <div className="w-2 h-2 rounded-full bg-slate-600" />;
+        }
+    };
 
     return (
-        <div className="glass-card p-5">
-            {/* Header - Always Visible */}
-            <div className="flex items-center justify-between">
-                <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-xl bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center">
-                        <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                        </svg>
-                    </div>
-                    <div>
-                        <h3 className="font-semibold text-white">AVM Estimates</h3>
-                        <p className="text-sm text-slate-400">
-                            {hasResults ? `${results.length} sources` : 'Fetch property values'}
-                        </p>
-                    </div>
+        <div className="glass-card p-5 border-2 border-cyan-500/30 bg-gradient-to-br from-slate-900/80 to-cyan-950/40">
+            {/* Header */}
+            <div className="flex items-center gap-3 mb-4">
+                <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center shadow-lg shadow-cyan-500/30">
+                    <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                    </svg>
                 </div>
-
-                <button
-                    onClick={fetchAVMs}
-                    disabled={isLoading || !address.trim()}
-                    className="btn-primary flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed text-sm py-2 w-full sm:w-auto"
-                >
-                    {isLoading ? (
-                        <>
-                            <svg className="w-4 h-4 animate-spin" fill="none" viewBox="0 0 24 24">
-                                <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                                <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                            </svg>
-                            Fetching...
-                        </>
-                    ) : (
-                        <>
-                            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
-                            </svg>
-                            Fetch AVMs
-                        </>
-                    )}
-                </button>
+                <div className="flex-1">
+                    <h3 className="font-bold text-white text-lg">Property Value Lookup</h3>
+                    <p className="text-sm text-slate-400">
+                        {hasResults ? `${foundCount} of 7 sources found` : 'Fetch estimates from 7 sources'}
+                    </p>
+                </div>
             </div>
 
-            {/* Loading Progress Bar */}
+            {/* Fetch Button - Prominent */}
+            <button
+                onClick={fetchAVMs}
+                disabled={isLoading || !address.trim()}
+                className="w-full btn-primary py-4 text-lg font-bold flex items-center justify-center gap-3 mb-4 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-emerald-500/20"
+            >
+                {isLoading ? (
+                    <>
+                        <svg className="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24">
+                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                        </svg>
+                        Fetching Property Values...
+                    </>
+                ) : (
+                    <>
+                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                        </svg>
+                        Fetch Property Values
+                    </>
+                )}
+            </button>
+
+            {/* Loading Progress */}
             {isLoading && (
-                <div className="mt-4">
-                    <div className="flex items-center justify-between text-xs text-slate-400 mb-1">
-                        <span>Fetching from 7 sources...</span>
-                        <span>{Math.round(loadingProgress)}%</span>
-                    </div>
-                    <div className="h-2 bg-slate-700 rounded-full overflow-hidden">
+                <div className="mb-4">
+                    <div className="h-1.5 bg-slate-700 rounded-full overflow-hidden">
                         <div
-                            className="h-full bg-gradient-to-r from-cyan-500 to-blue-500 transition-all duration-100 ease-out"
+                            className="h-full bg-gradient-to-r from-cyan-500 to-emerald-500 transition-all duration-100"
                             style={{ width: `${loadingProgress}%` }}
                         />
                     </div>
                 </div>
             )}
 
+            {/* Source Status Grid - Always Visible */}
+            <div className="grid grid-cols-7 gap-1 mb-4">
+                {AVM_SOURCES.map((source) => {
+                    const state = sourceStates[source.id] || { status: 'pending' };
+                    return (
+                        <div
+                            key={source.id}
+                            className={`flex flex-col items-center p-2 rounded-lg transition-all ${state.status === 'found'
+                                    ? 'bg-emerald-500/10 border border-emerald-500/30'
+                                    : state.status === 'fetching'
+                                        ? 'bg-cyan-500/10 border border-cyan-500/30'
+                                        : 'bg-slate-800/50 border border-slate-700/30'
+                                }`}
+                        >
+                            <div className="w-8 h-8 rounded-lg bg-slate-700/50 flex items-center justify-center text-xs font-bold text-slate-400 mb-1">
+                                {source.icon}
+                            </div>
+                            <div className="h-4 flex items-center justify-center">
+                                <StatusIcon status={state.status} />
+                            </div>
+                            {state.status === 'found' && state.value && (
+                                <p className="text-[9px] text-emerald-400 font-medium mt-0.5 truncate w-full text-center">
+                                    {formatAVMCurrency(state.value).replace('$', '')}
+                                </p>
+                            )}
+                        </div>
+                    );
+                })}
+            </div>
+
             {/* Error */}
             {error && (
-                <div className="mt-4 p-3 rounded-lg bg-red-500/20 border border-red-500/30 text-red-300 text-sm">
+                <div className="mb-4 p-3 rounded-lg bg-red-500/20 border border-red-500/30 text-red-300 text-sm">
                     {error}
                 </div>
             )}
 
-            {/* No address warning */}
-            {!address.trim() && !error && !hasResults && !isLoading && (
-                <div className="mt-4 p-4 rounded-lg bg-slate-800/50 text-center text-slate-400 text-sm">
-                    Enter a property address above to fetch AVM estimates
+            {/* No address hint */}
+            {!address.trim() && !hasResults && !isLoading && (
+                <div className="p-4 rounded-lg bg-slate-800/50 text-center text-slate-400 text-sm">
+                    <svg className="w-8 h-8 mx-auto mb-2 text-slate-600" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M17.657 16.657L13.414 20.9a1.998 1.998 0 01-2.827 0l-4.244-4.243a8 8 0 1111.314 0z" />
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M15 11a3 3 0 11-6 0 3 3 0 016 0z" />
+                    </svg>
+                    Enter an address above to fetch property values
                 </div>
             )}
 
-            {/* Results Summary - Always visible when we have results */}
+            {/* Results Summary */}
             {hasResults && (
-                <div className="mt-4 space-y-3">
-                    {/* Property Data Summary */}
+                <div className="space-y-3">
+                    {/* Property Data */}
                     {propertyData && (
                         <div className="p-3 rounded-lg bg-slate-800/50 flex items-center justify-between text-sm">
-                            <span className="text-slate-400">Property Info:</span>
+                            <span className="text-slate-400">Property:</span>
                             <span className="text-white font-medium">
-                                {propertyData.sqft.toLocaleString()} sqft • {propertyData.beds} bed • {propertyData.baths} bath • Built {propertyData.yearBuilt}
+                                {propertyData.sqft.toLocaleString()} sf • {propertyData.beds}bd/{propertyData.baths}ba • {propertyData.yearBuilt}
                             </span>
                         </div>
                     )}
 
-                    {/* Best Estimate + Apply Button - Main Action Area */}
-                    <div className="p-4 rounded-xl bg-gradient-to-r from-blue-900/40 to-purple-900/40 border border-blue-500/30">
+                    {/* Best Estimate Card */}
+                    <div className="p-4 rounded-xl bg-gradient-to-r from-emerald-900/40 to-teal-900/40 border border-emerald-500/30">
                         <div className="flex items-center justify-between gap-4">
                             <div>
-                                <p className="text-xs text-blue-300 mb-1">Best Estimate (Trimmed Mean)</p>
-                                <p className="text-2xl font-bold text-white">{formatAVMCurrency(bestEstimate)}</p>
+                                <p className="text-xs text-emerald-300 mb-1">Best Estimate</p>
+                                <p className="text-3xl font-bold text-white">{formatAVMCurrency(bestEstimate)}</p>
                                 <p className="text-xs text-slate-400 mt-1">
-                                    Lesser of median ({formatAVMCurrency(median)}) & trimmed avg
+                                    From {foundCount} sources • Median: {formatAVMCurrency(median)}
                                 </p>
                             </div>
                             <button
                                 onClick={applyEstimate}
-                                className="px-5 py-3 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-medium transition-all hover:scale-105 shadow-lg"
+                                className="px-5 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-medium transition-all hover:scale-105 shadow-lg"
                             >
                                 Use as ARV
                             </button>
                         </div>
                     </div>
 
-                    {/* Expand/Collapse Toggle */}
+                    {/* Expand/Collapse */}
                     <button
                         onClick={() => setIsExpanded(!isExpanded)}
                         className="w-full flex items-center justify-center gap-2 py-2 text-sm text-slate-400 hover:text-white transition-colors"
                     >
-                        {isExpanded ? (
-                            <>
-                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 15l7-7 7 7" />
-                                </svg>
-                                Hide all sources
-                            </>
-                        ) : (
-                            <>
-                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                                </svg>
-                                Show all {results.length} sources
-                            </>
-                        )}
+                        <svg className={`w-4 h-4 transition-transform ${isExpanded ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                        </svg>
+                        {isExpanded ? 'Hide details' : `View all ${results.length} estimates`}
                     </button>
 
-                    {/* Expanded Sources List */}
+                    {/* Expanded List */}
                     {isExpanded && (
-                        <div className="space-y-2 max-h-[400px] overflow-y-auto pr-1 animate-fade-in">
+                        <div className="space-y-2 max-h-[300px] overflow-y-auto pr-1 animate-fade-in">
                             {results.map((result, index) => (
                                 <div
                                     key={index}
-                                    className="p-3 rounded-lg bg-slate-800/50 border border-slate-700/50 hover:border-slate-600/50 transition-colors flex items-center justify-between"
+                                    className="p-3 rounded-lg bg-slate-800/50 border border-slate-700/50 flex items-center justify-between"
                                 >
                                     <div className="flex-1">
                                         <div className="flex items-center gap-2">
                                             <p className="text-sm font-medium text-white">{result.source}</p>
                                             {result.url && (
-                                                <a
-                                                    href={result.url}
-                                                    target="_blank"
-                                                    rel="noopener noreferrer"
-                                                    className="text-blue-400 hover:text-blue-300"
-                                                >
+                                                <a href={result.url} target="_blank" rel="noopener noreferrer" className="text-cyan-400 hover:text-cyan-300">
                                                     <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" />
                                                     </svg>
