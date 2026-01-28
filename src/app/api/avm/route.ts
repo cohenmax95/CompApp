@@ -543,6 +543,351 @@ async function fetchRedfinHTTP(address: string): Promise<{
 }
 
 // ============================================
+// REALTOR.COM HTTP API - Lightweight alternative (no browser!)
+// ============================================
+async function fetchRealtorHTTP(address: string): Promise<{
+    estimate?: number;
+    low?: number;
+    high?: number;
+    url: string;
+    propertyData?: Partial<PropertyData>;
+} | null> {
+    const log = new ScraperLogger('Realtor-HTTP');
+
+    try {
+        log.log('SEARCH', 'Searching Realtor.com via HTTP');
+
+        // Use Realtor.com's autocomplete API
+        const searchUrl = `https://parser-external.geo.moveaws.com/suggest?input=${encodeURIComponent(address)}&client_id=rdc-home&limit=1&area_types=address`;
+
+        log.log('FETCH', 'Sending search request');
+        const response = await fetch(searchUrl, {
+            headers: {
+                'Accept': 'application/json',
+                'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
+            },
+        });
+
+        log.log('RESPONSE', `HTTP ${response.status}`);
+
+        if (!response.ok) {
+            log.finish(false);
+            return null;
+        }
+
+        const data = await response.json();
+        const result = data?.autocomplete?.[0];
+
+        if (result?.mpr_id) {
+            log.log('PROPERTY', 'Fetching property details');
+
+            // Get property details using the mpr_id
+            const detailUrl = `https://www.realtor.com/api/v1/hulk_main_srp?client_id=rdc-x&schema=vesta&query=${encodeURIComponent(`{"home_id":"${result.mpr_id}"}`)}`;
+
+            const detailRes = await fetch(detailUrl, {
+                headers: {
+                    'Accept': 'application/json',
+                    'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
+                },
+            });
+
+            if (detailRes.ok) {
+                const detailData = await detailRes.json();
+                const property = detailData?.data?.home || detailData?.home || {};
+                const estimate = property.estimate?.estimate || property.price || 0;
+
+                if (estimate > 50000) {
+                    const returnResult = {
+                        estimate,
+                        low: Math.round(estimate * 0.94),
+                        high: Math.round(estimate * 1.06),
+                        url: `https://www.realtor.com/realestateandhomes-detail/${result.slug || ''}`,
+                        propertyData: {
+                            sqft: property.description?.sqft || 0,
+                            beds: property.description?.beds || 0,
+                            baths: property.description?.baths || 0,
+                            yearBuilt: property.description?.year_built || 0,
+                            lotSize: property.description?.lot_sqft || 0,
+                        },
+                    };
+                    log.finish(true, returnResult);
+                    return returnResult;
+                }
+            }
+        }
+
+        log.finish(false);
+        return { url: `https://www.realtor.com/realestateandhomes-search/${encodeURIComponent(address)}` };
+    } catch (error) {
+        log.error('EXCEPTION', error);
+        return null;
+    }
+}
+
+// ============================================
+// TRULIA HTTP API - Lightweight alternative (no browser!)
+// ============================================
+async function fetchTruliaHTTP(address: string): Promise<{
+    estimate?: number;
+    low?: number;
+    high?: number;
+    url: string;
+    propertyData?: Partial<PropertyData>;
+} | null> {
+    const log = new ScraperLogger('Trulia-HTTP');
+
+    try {
+        log.log('SEARCH', 'Searching Trulia via HTTP (same backend as Zillow)');
+
+        // Trulia uses Zillow's backend - try their search
+        const searchUrl = `https://www.trulia.com/home_values/${encodeURIComponent(address.replace(/\s+/g, '-').replace(/,/g, ''))}`;
+
+        log.log('FETCH', 'Fetching Trulia page');
+        const response = await fetch(searchUrl, {
+            headers: {
+                'Accept': 'text/html,application/xhtml+xml',
+                'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
+                'Referer': 'https://www.trulia.com/',
+            },
+        });
+
+        log.log('RESPONSE', `HTTP ${response.status}`);
+
+        if (!response.ok) {
+            log.finish(false);
+            return null;
+        }
+
+        const html = await response.text();
+        log.log('PARSE', 'Extracting estimate from HTML');
+
+        // Trulia uses similar patterns to Zillow
+        let estimate = 0;
+        const pricePatterns = [
+            /"estimatedValue":\s*(\d+)/,
+            /"price":\s*(\d+)/,
+            /\$([0-9,]+).*?(?:estimated|value)/i,
+        ];
+
+        for (const pattern of pricePatterns) {
+            const match = html.match(pattern);
+            if (match) {
+                estimate = parseInt(match[1].replace(/,/g, ''));
+                if (estimate > 50000) break;
+            }
+        }
+
+        if (estimate > 50000) {
+            const sqftMatch = html.match(/(\d+(?:,\d+)?)\s*(?:sq\s*ft|sqft)/i);
+            const bedsMatch = html.match(/(\d+)\s*bed/i);
+            const bathsMatch = html.match(/([\d.]+)\s*bath/i);
+
+            const result = {
+                estimate,
+                low: Math.round(estimate * 0.93),
+                high: Math.round(estimate * 1.07),
+                url: searchUrl,
+                propertyData: {
+                    sqft: sqftMatch ? parseInt(sqftMatch[1].replace(/,/g, '')) : 0,
+                    beds: bedsMatch ? parseInt(bedsMatch[1]) : 0,
+                    baths: bathsMatch ? parseFloat(bathsMatch[1]) : 0,
+                },
+            };
+            log.finish(true, result);
+            return result;
+        }
+
+        log.finish(false);
+        return { url: searchUrl };
+    } catch (error) {
+        log.error('EXCEPTION', error);
+        return null;
+    }
+}
+
+// ============================================
+// COMEHOME (HOUSECANARY) HTTP API - Lightweight alternative
+// ============================================
+async function fetchComeHomeHTTP(address: string): Promise<{
+    estimate?: number;
+    low?: number;
+    high?: number;
+    url: string;
+    propertyData?: Partial<PropertyData>;
+} | null> {
+    const log = new ScraperLogger('ComeHome-HTTP');
+
+    try {
+        log.log('SEARCH', 'Searching ComeHome via HTTP');
+
+        // ComeHome uses a search page
+        const searchUrl = `https://www.comehome.com/property/${encodeURIComponent(address.replace(/\s+/g, '-').replace(/,/g, '').replace(/[^a-zA-Z0-9-]/g, ''))}`;
+
+        log.log('FETCH', 'Fetching ComeHome page');
+        const response = await fetch(searchUrl, {
+            headers: {
+                'Accept': 'text/html,application/xhtml+xml',
+                'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
+            },
+        });
+
+        log.log('RESPONSE', `HTTP ${response.status}`);
+
+        if (!response.ok) {
+            log.finish(false);
+            return null;
+        }
+
+        const html = await response.text();
+        log.log('PARSE', 'Extracting estimate');
+
+        // Extract estimate from ComeHome page
+        let estimate = 0;
+        const patterns = [
+            /"estimatedValue":\s*(\d+)/,
+            /"houseCanaryValue":\s*(\d+)/,
+            /Estimated Value[:\s]*\$([0-9,]+)/i,
+            /\$([0-9,]+)\s*(?:est|value)/i,
+        ];
+
+        for (const pattern of patterns) {
+            const match = html.match(pattern);
+            if (match) {
+                estimate = parseInt(match[1].replace(/,/g, ''));
+                if (estimate > 50000) break;
+            }
+        }
+
+        if (estimate > 50000) {
+            const result = {
+                estimate,
+                low: Math.round(estimate * 0.94),
+                high: Math.round(estimate * 1.06),
+                url: searchUrl,
+            };
+            log.finish(true, result);
+            return result;
+        }
+
+        log.finish(false);
+        return { url: `https://www.comehome.com/search?q=${encodeURIComponent(address)}` };
+    } catch (error) {
+        log.error('EXCEPTION', error);
+        return null;
+    }
+}
+
+// ============================================
+// BANK OF AMERICA HTTP API - Lightweight alternative
+// ============================================
+async function fetchBofAHTTP(address: string): Promise<{
+    estimate?: number;
+    low?: number;
+    high?: number;
+    url: string;
+    propertyData?: Partial<PropertyData>;
+} | null> {
+    const log = new ScraperLogger('BofA-HTTP');
+
+    try {
+        log.log('SEARCH', 'Searching Bank of America via HTTP');
+
+        // BofA has a property search
+        const searchUrl = `https://www.bankofamerica.com/real-estate/homevalue/`;
+
+        log.log('FETCH', 'Fetching BofA search page');
+        const response = await fetch(searchUrl, {
+            headers: {
+                'Accept': 'text/html,application/xhtml+xml',
+                'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
+            },
+        });
+
+        log.log('RESPONSE', `HTTP ${response.status}`);
+
+        // BofA requires form submission - may not work without browser
+        // Return URL for manual lookup
+        log.finish(false);
+        return { url: `${searchUrl}?address=${encodeURIComponent(address)}` };
+    } catch (error) {
+        log.error('EXCEPTION', error);
+        return null;
+    }
+}
+
+// ============================================
+// XOME HTTP API - Lightweight alternative
+// ============================================
+async function fetchXomeHTTP(address: string): Promise<{
+    estimate?: number;
+    low?: number;
+    high?: number;
+    url: string;
+    propertyData?: Partial<PropertyData>;
+} | null> {
+    const log = new ScraperLogger('Xome-HTTP');
+
+    try {
+        log.log('SEARCH', 'Searching Xome via HTTP');
+
+        // Xome has a property value tool
+        const searchUrl = `https://www.xome.com/realestate/${encodeURIComponent(address.replace(/\s+/g, '-').replace(/,/g, '').toLowerCase())}`;
+
+        log.log('FETCH', 'Fetching Xome page');
+        const response = await fetch(searchUrl, {
+            headers: {
+                'Accept': 'text/html,application/xhtml+xml',
+                'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
+            },
+        });
+
+        log.log('RESPONSE', `HTTP ${response.status}`);
+
+        if (!response.ok) {
+            log.finish(false);
+            return null;
+        }
+
+        const html = await response.text();
+        log.log('PARSE', 'Extracting estimate');
+
+        // Extract estimate from Xome
+        let estimate = 0;
+        const patterns = [
+            /"estimatedValue":\s*(\d+)/,
+            /"price":\s*(\d+)/,
+            /Estimated.*?\$([0-9,]+)/i,
+            /Value.*?\$([0-9,]+)/i,
+        ];
+
+        for (const pattern of patterns) {
+            const match = html.match(pattern);
+            if (match) {
+                estimate = parseInt(match[1].replace(/,/g, ''));
+                if (estimate > 50000) break;
+            }
+        }
+
+        if (estimate > 50000) {
+            const result = {
+                estimate,
+                low: Math.round(estimate * 0.90),
+                high: Math.round(estimate * 1.10),
+                url: searchUrl,
+            };
+            log.finish(true, result);
+            return result;
+        }
+
+        log.finish(false);
+        return { url: `https://www.xome.com/search?q=${encodeURIComponent(address)}` };
+    } catch (error) {
+        log.error('EXCEPTION', error);
+        return null;
+    }
+}
+
+// ============================================
 // ZILLOW SCRAPER - Uses __NEXT_DATA__ JSON extraction
 // ============================================
 async function scrapeZillow(address: string): Promise<{
@@ -1512,16 +1857,16 @@ export async function POST(request: NextRequest) {
         console.log('Starting AVM scraping for:', address);
 
         // Scrape sources in parallel batches of 3 for ~3x faster execution
-        // Using HTTP-only scrapers for better reliability (no Puppeteer bot detection)
+        // ALL scrapers now use HTTP-only (no Puppeteer = no bot detection!)
         const sources = [
             { name: 'RentCast', fn: fetchRentCast, accuracy: { low: 0.97, high: 1.03 } },
             { name: 'Zillow', fn: fetchZillowHTTP, accuracy: { low: 0.93, high: 1.07 } },
             { name: 'Redfin', fn: fetchRedfinHTTP, accuracy: { low: 0.95, high: 1.05 } },
-            { name: 'Realtor.com', fn: scrapeRealtor, accuracy: { low: 0.94, high: 1.06 } },
-            { name: 'Trulia', fn: scrapeTrulia, accuracy: { low: 0.93, high: 1.07 } },
-            { name: 'ComeHome', fn: scrapeComeHome, accuracy: { low: 0.94, high: 1.06 } },
-            { name: 'Bank of America', fn: scrapeBankOfAmerica, accuracy: { low: 0.95, high: 1.05 } },
-            { name: 'Xome', fn: scrapeXome, accuracy: { low: 0.90, high: 1.10 } },
+            { name: 'Realtor.com', fn: fetchRealtorHTTP, accuracy: { low: 0.94, high: 1.06 } },
+            { name: 'Trulia', fn: fetchTruliaHTTP, accuracy: { low: 0.93, high: 1.07 } },
+            { name: 'ComeHome', fn: fetchComeHomeHTTP, accuracy: { low: 0.94, high: 1.06 } },
+            { name: 'Bank of America', fn: fetchBofAHTTP, accuracy: { low: 0.95, high: 1.05 } },
+            { name: 'Xome', fn: fetchXomeHTTP, accuracy: { low: 0.90, high: 1.10 } },
         ];
 
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
