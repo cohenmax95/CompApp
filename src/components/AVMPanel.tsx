@@ -16,6 +16,7 @@ export interface AVMPanelRef {
 
 // All AVM sources we fetch from
 const AVM_SOURCES = [
+    { id: 'rentcast', name: 'RentCast', icon: 'RC' },
     { id: 'zillow', name: 'Zillow', icon: 'Z' },
     { id: 'redfin', name: 'Redfin', icon: 'R' },
     { id: 'realtor', name: 'Realtor', icon: 'R' },

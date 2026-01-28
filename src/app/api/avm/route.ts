@@ -5,6 +5,9 @@ import puppeteer, { Browser, Page } from 'puppeteer';
 // 2Captcha API key for CAPTCHA solving
 const CAPTCHA_API_KEY = '4f79e12ed663c4cd4a26dc0186744710';
 
+// RentCast API key for property valuations
+const RENTCAST_API_KEY = '647e5f595c784cdba15fc418d95d3541';
+
 // ============================================
 // BROWSER CONFIGURATION WITH STEALTH
 // ============================================
@@ -79,6 +82,85 @@ async function solveCaptcha(siteKey: string, pageUrl: string): Promise<string | 
         return null;
     } catch (error) {
         console.error('2Captcha error:', error);
+        return null;
+    }
+}
+
+// ============================================
+// RENTCAST API - Direct API integration (no scraping!)
+// Provides property value estimates and rent estimates
+// Docs: https://developers.rentcast.io/reference/value-estimate
+// ============================================
+async function fetchRentCast(address: string): Promise<{
+    estimate?: number;
+    low?: number;
+    high?: number;
+    rentEstimate?: number;
+    url: string;
+    propertyData?: Partial<PropertyData>;
+} | null> {
+    try {
+        console.log('Fetching RentCast value estimate...');
+
+        // Value Estimate API
+        const valueUrl = `https://api.rentcast.io/v1/avm/value?address=${encodeURIComponent(address)}`;
+        const valueRes = await fetch(valueUrl, {
+            method: 'GET',
+            headers: {
+                'Accept': 'application/json',
+                'X-Api-Key': RENTCAST_API_KEY,
+            },
+        });
+
+        if (!valueRes.ok) {
+            console.error('RentCast value API error:', valueRes.status, await valueRes.text());
+            return null;
+        }
+
+        const valueData = await valueRes.json();
+        console.log('RentCast value response:', JSON.stringify(valueData).slice(0, 200));
+
+        // Also get rent estimate for future use
+        let rentEstimate = 0;
+        try {
+            const rentUrl = `https://api.rentcast.io/v1/avm/rent?address=${encodeURIComponent(address)}`;
+            const rentRes = await fetch(rentUrl, {
+                method: 'GET',
+                headers: {
+                    'Accept': 'application/json',
+                    'X-Api-Key': RENTCAST_API_KEY,
+                },
+            });
+            if (rentRes.ok) {
+                const rentData = await rentRes.json();
+                rentEstimate = rentData.rent || rentData.rentHigh || 0;
+                console.log('RentCast rent estimate:', rentEstimate);
+            }
+        } catch (e) {
+            console.log('RentCast rent API skipped:', e);
+        }
+
+        if (valueData.price || valueData.priceHigh) {
+            const estimate = valueData.price || Math.round((valueData.priceLow + valueData.priceHigh) / 2);
+            return {
+                estimate,
+                low: valueData.priceLow || Math.round(estimate * 0.95),
+                high: valueData.priceHigh || Math.round(estimate * 1.05),
+                rentEstimate,
+                url: `https://app.rentcast.io/app?address=${encodeURIComponent(address)}`,
+                propertyData: {
+                    sqft: valueData.squareFootage || 0,
+                    beds: valueData.bedrooms || 0,
+                    baths: valueData.bathrooms || 0,
+                    yearBuilt: valueData.yearBuilt || 0,
+                    lotSize: valueData.lotSize || 0,
+                },
+            };
+        }
+
+        return { url: `https://app.rentcast.io/app?address=${encodeURIComponent(address)}` };
+    } catch (error) {
+        console.error('RentCast API error:', error);
         return null;
     }
 }
@@ -882,7 +964,9 @@ export async function POST(request: NextRequest) {
         // Scrape sources in parallel batches of 3 for ~3x faster execution
         // Note: Realtor.com and Trulia often have gated estimates for off-market properties
         // ComeHome (HouseCanary) is a reliable alternative to the defunct Eppraisal
+        // RentCast is a direct API (no scraping) - most reliable!
         const sources = [
+            { name: 'RentCast', fn: fetchRentCast, accuracy: { low: 0.97, high: 1.03 } },
             { name: 'Zillow (Zestimate)', fn: scrapeZillow, accuracy: { low: 0.93, high: 1.07 } },
             { name: 'Redfin Estimate', fn: scrapeRedfin, accuracy: { low: 0.95, high: 1.05 } },
             { name: 'Realtor.com', fn: scrapeRealtor, accuracy: { low: 0.94, high: 1.06 } },
