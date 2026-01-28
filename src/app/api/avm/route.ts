@@ -962,18 +962,19 @@ export async function POST(request: NextRequest) {
         console.log('Starting AVM scraping for:', address);
 
         // Scrape sources in parallel batches of 3 for ~3x faster execution
-        // Note: Realtor.com and Trulia often have gated estimates for off-market properties
-        // ComeHome (HouseCanary) is a reliable alternative to the defunct Eppraisal
-        // RentCast is a direct API (no scraping) - most reliable!
+        // NOTE: Web scrapers are DISABLED - they were returning data for WRONG properties!
+        // RentCast is a direct API that returns verified accurate data
+        // TODO: Fix scrapers to properly match the exact property before re-enabling
         const sources = [
             { name: 'RentCast', fn: fetchRentCast, accuracy: { low: 0.97, high: 1.03 } },
-            { name: 'Zillow (Zestimate)', fn: scrapeZillow, accuracy: { low: 0.93, high: 1.07 } },
-            { name: 'Redfin Estimate', fn: scrapeRedfin, accuracy: { low: 0.95, high: 1.05 } },
-            { name: 'Realtor.com', fn: scrapeRealtor, accuracy: { low: 0.94, high: 1.06 } },
-            { name: 'ComeHome (HouseCanary)', fn: scrapeComeHome, accuracy: { low: 0.94, high: 1.06 } },
-            { name: 'Trulia', fn: scrapeTrulia, accuracy: { low: 0.93, high: 1.07 } },
-            { name: 'Bank of America', fn: scrapeBankOfAmerica, accuracy: { low: 0.95, high: 1.05 } },
-            { name: 'Xome', fn: scrapeXome, accuracy: { low: 0.90, high: 1.10 } },
+            // DISABLED - returning wrong property data:
+            // { name: 'Zillow (Zestimate)', fn: scrapeZillow, accuracy: { low: 0.93, high: 1.07 } },
+            // { name: 'Redfin Estimate', fn: scrapeRedfin, accuracy: { low: 0.95, high: 1.05 } },
+            // { name: 'Realtor.com', fn: scrapeRealtor, accuracy: { low: 0.94, high: 1.06 } },
+            // { name: 'ComeHome (HouseCanary)', fn: scrapeComeHome, accuracy: { low: 0.94, high: 1.06 } },
+            // { name: 'Trulia', fn: scrapeTrulia, accuracy: { low: 0.93, high: 1.07 } },
+            // { name: 'Bank of America', fn: scrapeBankOfAmerica, accuracy: { low: 0.95, high: 1.05 } },
+            // { name: 'Xome', fn: scrapeXome, accuracy: { low: 0.90, high: 1.10 } },
         ];
 
         // eslint-disable-next-line @typescript-eslint/no-explicit-any

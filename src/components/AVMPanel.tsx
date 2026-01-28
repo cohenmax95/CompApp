@@ -15,15 +15,18 @@ export interface AVMPanelRef {
 }
 
 // All AVM sources we fetch from
+// NOTE: Web scrapers disabled due to returning wrong property data
+// Only RentCast API is active - verified accurate
 const AVM_SOURCES = [
     { id: 'rentcast', name: 'RentCast', icon: 'RC' },
-    { id: 'zillow', name: 'Zillow', icon: 'Z' },
-    { id: 'redfin', name: 'Redfin', icon: 'R' },
-    { id: 'realtor', name: 'Realtor', icon: 'R' },
-    { id: 'trulia', name: 'Trulia', icon: 'T' },
-    { id: 'comehome', name: 'ComeHome', icon: 'C' },
-    { id: 'bofa', name: 'BofA', icon: 'B' },
-    { id: 'xome', name: 'Xome', icon: 'X' },
+    // Scrapers disabled:
+    // { id: 'zillow', name: 'Zillow', icon: 'Z' },
+    // { id: 'redfin', name: 'Redfin', icon: 'R' },
+    // { id: 'realtor', name: 'Realtor', icon: 'R' },
+    // { id: 'trulia', name: 'Trulia', icon: 'T' },
+    // { id: 'comehome', name: 'ComeHome', icon: 'C' },
+    // { id: 'bofa', name: 'BofA', icon: 'B' },
+    // { id: 'xome', name: 'Xome', icon: 'X' },
 ];
 
 type SourceStatus = 'pending' | 'fetching' | 'found' | 'not_found';
