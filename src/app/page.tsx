@@ -327,6 +327,7 @@ Best Offer: ${formatCurrency(results.bestOffer.offerPrice)} (${results.bestStrat
                             hasInputs={hasInputs}
                             arv={state.inputs.arv}
                             repairEstimate={state.inputs.repairEstimate}
+                            sqft={state.sqft}
                         />
                     </div>
                 </div>
