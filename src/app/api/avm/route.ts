@@ -492,15 +492,43 @@ async function scrapeNARRPR(address: string): Promise<{
         log.log('LOGIN', 'Navigating to NARRPR login page');
         await page.goto('https://auth.narrpr.com/auth/sign-in', { waitUntil: 'networkidle2', timeout: 30000 });
 
-        // Step 2: Enter credentials
+        // Wait for page to fully load
+        await new Promise(r => setTimeout(r, 3000));
+
+        // Step 2: Enter credentials - try multiple selectors
+        log.log('LOGIN', 'Looking for login form');
+
+        // Try different selectors for email input
+        let emailSelector = '#SignInEmail';
+        try {
+            await page.waitForSelector('#SignInEmail', { timeout: 5000 });
+        } catch {
+            // Try fallback selectors
+            const fallbacks = ['input[type="email"]', 'input[name="email"]', 'input[id*="email" i]', 'input[placeholder*="email" i]'];
+            for (const sel of fallbacks) {
+                const found = await page.$(sel);
+                if (found) {
+                    emailSelector = sel;
+                    break;
+                }
+            }
+        }
+
         log.log('LOGIN', 'Entering credentials');
-        await page.waitForSelector('#SignInEmail', { timeout: 10000 });
-        await page.type('#SignInEmail', NARRPR_EMAIL, { delay: 50 });
-        await page.type('#SignInPassword', NARRPR_PASSWORD, { delay: 50 });
+        await page.type(emailSelector, NARRPR_EMAIL, { delay: 50 });
+
+        // Try different selectors for password
+        const passwordSelector = await page.$('#SignInPassword') ? '#SignInPassword' : 'input[type="password"]';
+        await page.type(passwordSelector, NARRPR_PASSWORD, { delay: 50 });
 
         // Step 3: Click login
         log.log('LOGIN', 'Clicking sign in button');
-        await page.click('#SignInBtn');
+        const signInBtn = await page.$('#SignInBtn') || await page.$('button[type="submit"]') || await page.$('button:has-text("Sign In")');
+        if (signInBtn) {
+            await signInBtn.click();
+        } else {
+            await page.keyboard.press('Enter');
+        }
 
         // Step 4: Wait for dashboard to load
         log.log('LOGIN', 'Waiting for dashboard');
