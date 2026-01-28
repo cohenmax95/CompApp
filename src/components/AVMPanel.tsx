@@ -285,35 +285,21 @@ const AVMPanel = forwardRef<AVMPanelRef, AVMPanelProps>(({ address, onAddressCha
                 </div>
             )}
 
-            {/* Source Status Grid - Always Visible */}
-            <div className="grid grid-cols-7 gap-1 mb-4">
-                {AVM_SOURCES.map((source) => {
-                    const state = sourceStates[source.id] || { status: 'pending' };
-                    return (
-                        <div
-                            key={source.id}
-                            className={`flex flex-col items-center p-2 rounded-lg transition-all ${state.status === 'found'
-                                ? 'bg-emerald-500/10 border border-emerald-500/30'
-                                : state.status === 'fetching'
-                                    ? 'bg-cyan-500/10 border border-cyan-500/30'
-                                    : 'bg-slate-800/50 border border-slate-700/30'
-                                }`}
-                        >
-                            <div className="w-8 h-8 rounded-lg bg-slate-700/50 flex items-center justify-center text-xs font-bold text-slate-400 mb-1">
-                                {source.icon}
-                            </div>
-                            <div className="h-4 flex items-center justify-center">
-                                <StatusIcon status={state.status} />
-                            </div>
-                            {state.status === 'found' && state.value && (
-                                <p className="text-[9px] text-emerald-400 font-medium mt-0.5 truncate w-full text-center">
-                                    {formatAVMCurrency(state.value).replace('$', '')}
-                                </p>
-                            )}
-                        </div>
-                    );
-                })}
-            </div>
+            {/* Simple Source Status */}
+            {isLoading && (
+                <div className="flex items-center gap-2 text-sm text-cyan-400 mb-4">
+                    <div className="w-4 h-4 border-2 border-cyan-400 border-t-transparent rounded-full animate-spin" />
+                    <span>Checking {AVM_SOURCES.length} sources...</span>
+                </div>
+            )}
+            {!isLoading && foundCount > 0 && (
+                <div className="flex items-center gap-2 text-sm text-emerald-400 mb-4">
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
+                    </svg>
+                    <span>{foundCount} of {AVM_SOURCES.length} sources found values</span>
+                </div>
+            )}
 
             {/* Error */}
             {error && (
@@ -404,6 +390,21 @@ const AVMPanel = forwardRef<AVMPanelRef, AVMPanelProps>(({ address, onAddressCha
                             ))}
                         </div>
                     )}
+                </div>
+            )}
+
+            {/* Google Street View */}
+            {address.trim() && hasResults && (
+                <div className="mt-4 rounded-xl overflow-hidden border border-slate-700/50">
+                    <iframe
+                        width="100%"
+                        height="200"
+                        style={{ border: 0 }}
+                        loading="lazy"
+                        allowFullScreen
+                        referrerPolicy="no-referrer-when-downgrade"
+                        src={`https://www.google.com/maps/embed/v1/streetview?key=AIzaSyBFw0Qbyq9zTFTd-tUY6dQQyYQ1ECZF7Pg&location=${encodeURIComponent(address)}&heading=0&pitch=0&fov=90`}
+                    />
                 </div>
             )}
         </div>

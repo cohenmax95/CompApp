@@ -258,37 +258,7 @@ export default function PropertyInput({
                     </div>
                 </div>
 
-                {/* Quick MAO Slider - Only when ARV entered */}
-                {inputs.arv > 0 && (
-                    <div className="p-4 rounded-2xl bg-gradient-to-br from-emerald-900/30 to-teal-900/30 border border-emerald-500/20">
-                        <div className="flex items-center justify-between mb-3">
-                            <span className="text-xs text-emerald-400/80 uppercase tracking-wide font-medium">Quick MAO Calculator</span>
-                            <span className="text-xl font-bold text-white">{arvPercent}%</span>
-                        </div>
 
-                        <input
-                            type="range"
-                            min="50"
-                            max="90"
-                            step="5"
-                            value={arvPercent}
-                            onChange={(e) => setArvPercent(parseInt(e.target.value))}
-                            className="w-full h-2 rounded-lg cursor-pointer mb-2"
-                            style={{
-                                background: `linear-gradient(to right, #10b981 0%, #10b981 ${(arvPercent - 50) * 2.5}%, #334155 ${(arvPercent - 50) * 2.5}%, #334155 100%)`
-                            }}
-                        />
-
-                        <div className="flex justify-between text-[10px] text-slate-500 mb-4">
-                            <span>50%</span><span>60%</span><span>70%</span><span>80%</span><span>90%</span>
-                        </div>
-
-                        <div className="flex items-center justify-between p-3 rounded-xl bg-slate-900/60">
-                            <span className="text-sm text-slate-400">Max Allowable Offer</span>
-                            <span className="text-2xl font-bold text-emerald-400">{formatCurrency(calculateMAO())}</span>
-                        </div>
-                    </div>
-                )}
             </div>
         </div>
     );
