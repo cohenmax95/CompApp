@@ -75,6 +75,12 @@ const AVMPanel = forwardRef<AVMPanelRef, AVMPanelProps>(({ address, onAddressCha
     // Manual ARV override state
     const [manualARV, setManualARV] = useState<string>('');
     const [showManualEntry, setShowManualEntry] = useState(false);
+    const [isManualMode, setIsManualMode] = useState(false);
+
+    // Manual mode property fields
+    const [manualSqft, setManualSqft] = useState<string>('');
+    const [manualBeds, setManualBeds] = useState<string>('');
+    const [manualBaths, setManualBaths] = useState<string>('');
 
     // History state
     const [history, setHistory] = useState<CompHistoryEntry[]>([]);
@@ -398,9 +404,12 @@ const AVMPanel = forwardRef<AVMPanelRef, AVMPanelProps>(({ address, onAddressCha
     const applyManualARV = () => {
         const value = parseInt(manualARV.replace(/[^0-9]/g, ''));
         if (value > 0) {
-            onApplyEstimate(value, Math.round(value * 0.9), propertyData?.sqft);
-            setManualARV('');
-            setShowManualEntry(false);
+            const sqft = manualSqft ? parseInt(manualSqft.replace(/[^0-9]/g, '')) : propertyData?.sqft;
+            onApplyEstimate(value, Math.round(value * 0.9), sqft);
+            if (!isManualMode) {
+                setManualARV('');
+                setShowManualEntry(false);
+            }
         }
     };
 
@@ -444,8 +453,29 @@ const AVMPanel = forwardRef<AVMPanelRef, AVMPanelProps>(({ address, onAddressCha
                 <div className="flex-1">
                     <h3 className="font-bold text-white text-lg">Property Value Lookup</h3>
                     <p className="text-sm text-slate-400">
-                        {hasResults ? `${foundCount} of 7 sources found` : 'Enter address and fetch values'}
+                        {isManualMode ? 'Manual entry mode' : hasResults ? `${foundCount} of 7 sources found` : 'Enter address and fetch values'}
                     </p>
+                </div>
+                {/* Mode Toggle */}
+                <div className="flex items-center gap-2">
+                    <button
+                        onClick={() => setIsManualMode(false)}
+                        className={`px-3 py-1.5 rounded-l-lg text-xs font-medium transition-all ${!isManualMode
+                            ? 'bg-cyan-500 text-white'
+                            : 'bg-slate-700 text-slate-400 hover:text-white'
+                            }`}
+                    >
+                        Auto
+                    </button>
+                    <button
+                        onClick={() => setIsManualMode(true)}
+                        className={`px-3 py-1.5 rounded-r-lg text-xs font-medium transition-all ${isManualMode
+                            ? 'bg-amber-500 text-white'
+                            : 'bg-slate-700 text-slate-400 hover:text-white'
+                            }`}
+                    >
+                        Manual
+                    </button>
                 </div>
                 {/* History Button */}
                 <div className="relative">
@@ -533,96 +563,178 @@ const AVMPanel = forwardRef<AVMPanelRef, AVMPanelProps>(({ address, onAddressCha
                 <AddressAutocomplete
                     value={address}
                     onChange={onAddressChange}
-                    onEnter={fetchAVMs}
+                    onEnter={!isManualMode ? fetchAVMs : undefined}
                     placeholder="Enter property address..."
                     className="w-full px-4 py-3 rounded-xl bg-slate-800/80 border border-slate-600/50 text-white placeholder-slate-500 focus:border-cyan-500/50 focus:ring-2 focus:ring-cyan-500/20 focus:outline-none transition-all text-base"
                 />
             </div>
 
-            {/* Fetch Button - Prominent */}
-            <button
-                onClick={fetchAVMs}
-                disabled={isLoading || !address.trim()}
-                className="w-full btn-primary py-4 text-lg font-bold flex items-center justify-center gap-3 mb-4 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-emerald-500/20"
-            >
-                {isLoading ? (
-                    <>
-                        <svg className="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24">
-                            <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
-                            <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
-                        </svg>
-                        Fetching Property Values...
-                    </>
-                ) : (
-                    <>
-                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
-                        </svg>
-                        Fetch Property Values
-                    </>
-                )}
-            </button>
-
-            {/* Loading Progress */}
-            {isLoading && (
-                <div className="mb-4">
-                    <div className="h-1.5 bg-slate-700 rounded-full overflow-hidden">
-                        <div
-                            className="h-full bg-gradient-to-r from-cyan-500 to-emerald-500 transition-all duration-100"
-                            style={{ width: `${loadingProgress}%` }}
-                        />
-                    </div>
-                </div>
-            )}
-
-            {/* Manual ARV Entry Section */}
-            <div className="mb-4">
-                <button
-                    onClick={() => setShowManualEntry(!showManualEntry)}
-                    className="w-full flex items-center justify-between px-4 py-3 rounded-lg bg-slate-800/60 border border-slate-600/50 hover:border-slate-500/50 transition-all text-sm"
-                >
-                    <div className="flex items-center gap-2">
-                        <svg className="w-4 h-4 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            {/* Manual Mode Form */}
+            {isManualMode ? (
+                <div className="space-y-4 mb-4 p-4 rounded-xl bg-gradient-to-br from-amber-900/20 to-slate-800/50 border border-amber-500/30">
+                    <div className="flex items-center gap-2 text-amber-400 text-sm font-medium mb-2">
+                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
                         </svg>
-                        <span className="text-slate-300">Manual ARV Override</span>
+                        Manual Entry
                     </div>
-                    <svg className={`w-4 h-4 text-slate-400 transition-transform ${showManualEntry ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
-                    </svg>
-                </button>
-                {showManualEntry && (
-                    <div className="mt-2 p-4 rounded-lg bg-slate-800/80 border border-slate-600/50 animate-fade-in">
-                        <p className="text-xs text-slate-400 mb-3">Enter custom ARV if sources are unavailable or you prefer your own estimate</p>
-                        <div className="flex gap-2">
-                            <div className="relative flex-1">
-                                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">$</span>
-                                <input
-                                    type="text"
-                                    value={manualARV}
-                                    onChange={(e) => {
-                                        const val = e.target.value.replace(/[^0-9]/g, '');
-                                        if (val) {
-                                            setManualARV(parseInt(val).toLocaleString());
-                                        } else {
-                                            setManualARV('');
-                                        }
-                                    }}
-                                    placeholder="Enter amount..."
-                                    className="w-full pl-7 pr-3 py-2.5 rounded-lg bg-slate-900/80 border border-slate-600/50 text-white placeholder-slate-500 focus:border-amber-500/50 focus:ring-2 focus:ring-amber-500/20 focus:outline-none transition-all"
-                                />
-                            </div>
-                            <button
-                                onClick={applyManualARV}
-                                disabled={!manualARV}
-                                className="px-4 py-2.5 rounded-lg bg-amber-600 hover:bg-amber-500 disabled:bg-slate-700 disabled:text-slate-500 text-white font-medium transition-all"
-                            >
-                                Apply
-                            </button>
+
+                    {/* ARV Input */}
+                    <div>
+                        <label className="block text-xs text-slate-400 mb-1">After Repair Value (ARV)</label>
+                        <div className="relative">
+                            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-lg">$</span>
+                            <input
+                                type="text"
+                                value={manualARV}
+                                onChange={(e) => {
+                                    const val = e.target.value.replace(/[^0-9]/g, '');
+                                    if (val) {
+                                        setManualARV(parseInt(val).toLocaleString());
+                                    } else {
+                                        setManualARV('');
+                                    }
+                                }}
+                                placeholder="Enter ARV..."
+                                className="w-full pl-8 pr-3 py-3 rounded-lg bg-slate-900/80 border border-amber-500/30 text-white text-lg font-semibold placeholder-slate-500 focus:border-amber-500/50 focus:ring-2 focus:ring-amber-500/20 focus:outline-none transition-all"
+                            />
                         </div>
                     </div>
-                )}
-            </div>
+
+                    {/* Property Details Row */}
+                    <div className="grid grid-cols-3 gap-3">
+                        <div>
+                            <label className="block text-xs text-slate-400 mb-1">Sq Ft</label>
+                            <input
+                                type="text"
+                                value={manualSqft}
+                                onChange={(e) => {
+                                    const val = e.target.value.replace(/[^0-9]/g, '');
+                                    setManualSqft(val ? parseInt(val).toLocaleString() : '');
+                                }}
+                                placeholder="1,500"
+                                className="w-full px-3 py-2 rounded-lg bg-slate-900/80 border border-slate-600/50 text-white placeholder-slate-500 focus:border-amber-500/50 focus:outline-none transition-all text-sm"
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-xs text-slate-400 mb-1">Beds</label>
+                            <input
+                                type="text"
+                                value={manualBeds}
+                                onChange={(e) => setManualBeds(e.target.value.replace(/[^0-9]/g, ''))}
+                                placeholder="3"
+                                className="w-full px-3 py-2 rounded-lg bg-slate-900/80 border border-slate-600/50 text-white placeholder-slate-500 focus:border-amber-500/50 focus:outline-none transition-all text-sm"
+                            />
+                        </div>
+                        <div>
+                            <label className="block text-xs text-slate-400 mb-1">Baths</label>
+                            <input
+                                type="text"
+                                value={manualBaths}
+                                onChange={(e) => setManualBaths(e.target.value.replace(/[^0-9.]/g, ''))}
+                                placeholder="2"
+                                className="w-full px-3 py-2 rounded-lg bg-slate-900/80 border border-slate-600/50 text-white placeholder-slate-500 focus:border-amber-500/50 focus:outline-none transition-all text-sm"
+                            />
+                        </div>
+                    </div>
+
+                    {/* Apply Button */}
+                    <button
+                        onClick={applyManualARV}
+                        disabled={!manualARV}
+                        className="w-full py-3 rounded-lg bg-amber-600 hover:bg-amber-500 disabled:bg-slate-700 disabled:text-slate-500 text-white font-bold text-lg transition-all shadow-lg shadow-amber-500/20"
+                    >
+                        Apply Manual Values
+                    </button>
+                </div>
+            ) : (
+                <>
+                    {/* Fetch Button - Prominent (Auto Mode) */}
+                    <button
+                        onClick={fetchAVMs}
+                        disabled={isLoading || !address.trim()}
+                        className="w-full btn-primary py-4 text-lg font-bold flex items-center justify-center gap-3 mb-4 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-emerald-500/20"
+                    >
+                        {isLoading ? (
+                            <>
+                                <svg className="w-5 h-5 animate-spin" fill="none" viewBox="0 0 24 24">
+                                    <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                                    <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                                </svg>
+                                Fetching Property Values...
+                            </>
+                        ) : (
+                            <>
+                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                                </svg>
+                                Fetch Property Values
+                            </>
+                        )}
+                    </button>
+
+                    {/* Loading Progress */}
+                    {isLoading && (
+                        <div className="mb-4">
+                            <div className="h-1.5 bg-slate-700 rounded-full overflow-hidden">
+                                <div
+                                    className="h-full bg-gradient-to-r from-cyan-500 to-emerald-500 transition-all duration-100"
+                                    style={{ width: `${loadingProgress}%` }}
+                                />
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Manual ARV Entry Section (collapsible in Auto mode) */}
+                    <div className="mb-4">
+                        <button
+                            onClick={() => setShowManualEntry(!showManualEntry)}
+                            className="w-full flex items-center justify-between px-4 py-3 rounded-lg bg-slate-800/60 border border-slate-600/50 hover:border-slate-500/50 transition-all text-sm"
+                        >
+                            <div className="flex items-center gap-2">
+                                <svg className="w-4 h-4 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
+                                </svg>
+                                <span className="text-slate-300">Manual ARV Override</span>
+                            </div>
+                            <svg className={`w-4 h-4 text-slate-400 transition-transform ${showManualEntry ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                            </svg>
+                        </button>
+                        {showManualEntry && (
+                            <div className="mt-2 p-4 rounded-lg bg-slate-800/80 border border-slate-600/50 animate-fade-in">
+                                <p className="text-xs text-slate-400 mb-3">Enter custom ARV if sources are unavailable or you prefer your own estimate</p>
+                                <div className="flex gap-2">
+                                    <div className="relative flex-1">
+                                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">$</span>
+                                        <input
+                                            type="text"
+                                            value={manualARV}
+                                            onChange={(e) => {
+                                                const val = e.target.value.replace(/[^0-9]/g, '');
+                                                if (val) {
+                                                    setManualARV(parseInt(val).toLocaleString());
+                                                } else {
+                                                    setManualARV('');
+                                                }
+                                            }}
+                                            placeholder="Enter amount..."
+                                            className="w-full pl-7 pr-3 py-2.5 rounded-lg bg-slate-900/80 border border-slate-600/50 text-white placeholder-slate-500 focus:border-amber-500/50 focus:ring-2 focus:ring-amber-500/20 focus:outline-none transition-all"
+                                        />
+                                    </div>
+                                    <button
+                                        onClick={applyManualARV}
+                                        disabled={!manualARV}
+                                        className="px-4 py-2.5 rounded-lg bg-amber-600 hover:bg-amber-500 disabled:bg-slate-700 disabled:text-slate-500 text-white font-medium transition-all"
+                                    >
+                                        Apply
+                                    </button>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                </>
+            )}
 
             {/* Simple Source Status */}
             {isLoading && (
