@@ -2914,7 +2914,8 @@ export async function POST(request: NextRequest) {
                             high: result.high || Math.round(result.estimate * source.accuracy.high),
                             lastUpdated: new Date().toISOString(),
                             url: result.url,
-                            comps: result.comps || undefined,
+                            // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                            comps: (result as any).comps || undefined,
                         });
                         errors.push(`✓ ${source.name} scraped`);
                     } else {
