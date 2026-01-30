@@ -2085,6 +2085,14 @@ async function scrapeRedfin(address: string): Promise<{
     high?: number;
     url: string;
     propertyData?: Partial<PropertyData>;
+    comps?: Array<{
+        address: string;
+        price: number;
+        sqft?: number;
+        beds?: number;
+        baths?: number;
+        soldDate?: string;
+    }>;
 } | null> {
     const log = new ScraperLogger('Redfin');
     let browser: Browser | null = null;
@@ -2157,12 +2165,21 @@ async function scrapeRedfin(address: string): Promise<{
             let estimate = 0;
             let sqft = 0, beds = 0, baths = 0, yearBuilt = 0;
             let extractionMethod = 'none';
+            const comps: Array<{
+                address: string;
+                price: number;
+                sqft: number;
+                beds: number;
+                baths: number;
+                soldDate: string;
+            }> = [];
 
             // Method 1: Look for reactServerState script
             const scripts = Array.from(document.querySelectorAll('script'));
             for (const script of scripts) {
                 const content = script.textContent || '';
-                if (content.includes('reactServerState') && content.includes('avm')) {
+                if (content.includes('reactServerState') || content.includes('__NEXT_DATA__')) {
+                    // Extract AVM estimate
                     const avmMatch = content.match(/"avm":\s*\{[^}]*"predictedValue"\s*:\s*(\d+)/);
                     if (avmMatch) {
                         estimate = parseInt(avmMatch[1]);
@@ -2183,11 +2200,72 @@ async function scrapeRedfin(address: string): Promise<{
                     beds = bedsMatch ? parseInt(bedsMatch[1]) : beds;
                     baths = bathsMatch ? parseFloat(bathsMatch[1]) : baths;
                     yearBuilt = yearMatch ? parseInt(yearMatch[1]) : yearBuilt;
+
+                    // Extract comparable sales - look for various patterns
+                    // Pattern 1: similarSoldHomes array
+                    const similarSoldMatch = content.match(/"similarSoldHomes"\s*:\s*(\[[^\]]+\])/);
+                    if (similarSoldMatch) {
+                        try {
+                            const soldHomes = JSON.parse(similarSoldMatch[1]);
+                            for (const home of soldHomes) {
+                                if (home.price && home.price.value) {
+                                    comps.push({
+                                        address: home.streetAddress?.value || home.address || 'Unknown',
+                                        price: home.price.value,
+                                        sqft: home.sqFt?.value || 0,
+                                        beds: home.beds || 0,
+                                        baths: home.baths || 0,
+                                        soldDate: home.soldDate || home.lastSaleDate || '',
+                                    });
+                                }
+                            }
+                        } catch (e) { /* ignore parse errors */ }
+                    }
+
+                    // Pattern 2: nearbyHomes with mlsStatus SOLD
+                    const nearbyMatch = content.match(/"nearbyHomes"\s*:\s*(\[[^\]]*\])/s);
+                    if (nearbyMatch && comps.length === 0) {
+                        try {
+                            // Try to find individual home entries
+                            const homeMatches = content.matchAll(/"streetAddress"\s*:\s*\{[^}]*"value"\s*:\s*"([^"]+)"[^}]*\}[^}]*"price"\s*:\s*\{[^}]*"value"\s*:\s*(\d+)/g);
+                            for (const match of homeMatches) {
+                                if (match[2] && parseInt(match[2]) > 50000) {
+                                    comps.push({
+                                        address: match[1],
+                                        price: parseInt(match[2]),
+                                        sqft: 0,
+                                        beds: 0,
+                                        baths: 0,
+                                        soldDate: '',
+                                    });
+                                }
+                                if (comps.length >= 10) break;
+                            }
+                        } catch (e) { /* ignore */ }
+                    }
+
+                    // Pattern 3: Look for soldHomes or recentlySold sections
+                    const soldSection = content.match(/"(?:soldHomes|recentlySold|comparables)"\s*:\s*\[([^\]]+)\]/);
+                    if (soldSection && comps.length === 0) {
+                        const priceMatches = soldSection[1].matchAll(/"price"\s*:\s*(\d+)[^}]*"streetAddress"\s*:\s*"([^"]+)"/g);
+                        for (const match of priceMatches) {
+                            comps.push({
+                                address: match[2],
+                                price: parseInt(match[1]),
+                                sqft: 0,
+                                beds: 0,
+                                baths: 0,
+                                soldDate: '',
+                            });
+                            if (comps.length >= 10) break;
+                        }
+                    }
+
                     if (estimate > 0) break;
                 }
             }
 
-            // Method 2: Fallback to regex
+            // Method 2: Fallback to regex for estimate
             if (estimate === 0) {
                 const patterns = [/"predictedValue":(\d+)/, /"avm":\{"price":\{"value":(\d+)/, /Redfin Estimate[^$]*\$([0-9,]+)/i];
                 for (const pattern of patterns) {
@@ -2205,7 +2283,7 @@ async function scrapeRedfin(address: string): Promise<{
                 html.match(/"address"\s*:\s*"([^"]+)"/);
             const scrapedAddress = addrMatch ? addrMatch[1] : '';
 
-            return { estimate, sqft, beds, baths, yearBuilt, scrapedAddress, extractionMethod };
+            return { estimate, sqft, beds, baths, yearBuilt, scrapedAddress, extractionMethod, comps };
         });
 
         log.log('DATA', 'Extraction complete', {
@@ -2236,6 +2314,7 @@ async function scrapeRedfin(address: string): Promise<{
                     yearBuilt: data.yearBuilt,
                     lotSize: 0,
                 },
+                comps: data.comps.length > 0 ? data.comps : undefined,
             };
             log.finish(true, result);
             return result;
