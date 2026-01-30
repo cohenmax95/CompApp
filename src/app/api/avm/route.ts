@@ -2278,6 +2278,42 @@ async function scrapeRedfin(address: string): Promise<{
                 }
             }
 
+            // Method 3: DOM-based comp scraping - look for visible home cards
+            if (comps.length === 0) {
+                // Look for "Similar Homes" or "Nearby Recently Sold" sections
+                const homeCards = document.querySelectorAll('[data-rf-test-id="abp-homeCard"], .HomeCard, .SimilarHomeCard, [class*="homeCard"]');
+                for (const card of homeCards) {
+                    try {
+                        const priceEl = card.querySelector('[data-rf-test-id="abp-price"], .price, [class*="price"]');
+                        const addressEl = card.querySelector('[data-rf-test-id="abp-homeinfo-homeAddress"], .homeAddress, [class*="address"]');
+                        const statsEl = card.querySelector('[data-rf-test-id="abp-homeinfo-homeStats"], .homeStats, [class*="stats"]');
+
+                        if (priceEl && addressEl) {
+                            const priceText = priceEl.textContent || '';
+                            const price = parseInt(priceText.replace(/[^0-9]/g, ''));
+
+                            if (price > 50000) {
+                                // Parse stats like "3 Beds • 2 Baths • 1,500 Sq Ft"
+                                const statsText = statsEl?.textContent || '';
+                                const bedsMatch = statsText.match(/(\d+)\s*(?:beds?|bd)/i);
+                                const bathsMatch = statsText.match(/([\d.]+)\s*(?:baths?|ba)/i);
+                                const sqftMatch = statsText.match(/([\d,]+)\s*(?:sq\.?\s*ft|sqft)/i);
+
+                                comps.push({
+                                    address: (addressEl.textContent || '').trim(),
+                                    price,
+                                    sqft: sqftMatch ? parseInt(sqftMatch[1].replace(/,/g, '')) : 0,
+                                    beds: bedsMatch ? parseInt(bedsMatch[1]) : 0,
+                                    baths: bathsMatch ? parseFloat(bathsMatch[1]) : 0,
+                                    soldDate: '',
+                                });
+                            }
+                        }
+                        if (comps.length >= 10) break;
+                    } catch (e) { /* ignore individual card errors */ }
+                }
+            }
+
             const addrMatch = html.match(/"streetAddress":\s*\{[^}]*"value"\s*:\s*"([^"]+)"/) ||
                 html.match(/"streetAddress"\s*:\s*"([^"]+)"/) ||
                 html.match(/"address"\s*:\s*"([^"]+)"/);
