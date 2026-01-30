@@ -3926,6 +3926,97 @@ async function scrapeHomeLight(address: string): Promise<{
 }
 
 // ============================================
+// CENTURY 21 HOME VALUE ESTIMATOR
+// Uses proxy for better success rate
+// ============================================
+async function scrapeCentury21(address: string): Promise<{
+    estimate?: number;
+    low?: number;
+    high?: number;
+    url: string;
+    propertyData?: Partial<PropertyData>;
+} | null> {
+    const log = new ScraperLogger('Century21');
+    let browser: Browser | null = null;
+    try {
+        const useProxy = isProxyConfigured();
+        log.log('BROWSER', `Creating stealth browser (proxy: ${useProxy})`);
+        browser = await createStealthBrowser(useProxy);
+        const page = await browser.newPage();
+        log.log('CONFIG', 'Configuring page');
+        await configurePage(page);
+        await configurePageWithProxy(page, useProxy);
+
+        const searchUrl = 'https://www.century21northhomes.com/home-value-estimator/';
+        log.log('NAVIGATE', `Going to: ${searchUrl}`);
+        await page.goto(searchUrl, { waitUntil: 'networkidle2', timeout: 30000 });
+        await new Promise(r => setTimeout(r, 2000));
+
+        // Find and fill address input
+        const addressInput = await page.$('input[type="text"], input[placeholder*="address"], input[name*="address"]');
+        if (addressInput) {
+            log.log('INPUT', 'Found address input');
+            await addressInput.type(address, { delay: 50 });
+            await new Promise(r => setTimeout(r, 1500));
+            await page.keyboard.press('Enter');
+            await new Promise(r => setTimeout(r, 4000));
+        }
+
+        const data = await page.evaluate(() => {
+            const text = document.body.innerText;
+            const html = document.body.innerHTML;
+            let estimate = 0;
+
+            const pricePatterns = [
+                /\"estimatedValue\"\s*:\s*(\d+)/i,
+                /\"value\"\s*:\s*(\d+)/i,
+                /\$([0-9]{1,3}(?:,[0-9]{3})+)/,
+            ];
+            for (const pattern of pricePatterns) {
+                const match = (html + text).match(pattern);
+                if (match) {
+                    estimate = parseInt(match[1].replace(/,/g, ''));
+                    if (estimate > 50000 && estimate < 50000000) break;
+                }
+            }
+
+            const sqftMatch = text.match(/([\d,]+)\s*(?:sq\.?\s*ft|sqft)/i);
+            const bedsMatch = text.match(/(\d+)\s*bed/i);
+            const bathsMatch = text.match(/([\d.]+)\s*bath/i);
+
+            return {
+                estimate,
+                sqft: sqftMatch ? parseInt(sqftMatch[1].replace(/,/g, '')) : 0,
+                beds: bedsMatch ? parseInt(bedsMatch[1]) : 0,
+                baths: bathsMatch ? parseFloat(bathsMatch[1]) : 0,
+            };
+        });
+
+        const finalUrl = page.url();
+        await browser.close();
+
+        if (data.estimate > 0) {
+            const result = {
+                estimate: data.estimate,
+                low: Math.round(data.estimate * 0.94),
+                high: Math.round(data.estimate * 1.06),
+                url: finalUrl,
+                propertyData: { sqft: data.sqft, beds: data.beds, baths: data.baths, yearBuilt: 0, lotSize: 0 },
+            };
+            log.finish(true, result);
+            return result;
+        }
+
+        log.finish(false);
+        return { url: finalUrl };
+    } catch (error) {
+        log.error('EXCEPTION', error);
+        if (browser) await browser.close();
+        return null;
+    }
+}
+
+// ============================================
 // AGGREGATE PROPERTY DATA
 // ============================================
 function aggregatePropertyData(results: Array<{ propertyData?: Partial<PropertyData> } | null>): PropertyData {
@@ -3988,6 +4079,7 @@ export async function POST(request: NextRequest) {
             { name: 'Eppraisal', fn: scrapeEppraisal, accuracy: { low: 0.92, high: 1.08 } },
             { name: 'PennyMac', fn: scrapePennyMac, accuracy: { low: 0.93, high: 1.07 } },
             { name: 'HomeLight', fn: scrapeHomeLight, accuracy: { low: 0.93, high: 1.07 } },
+            { name: 'Century21', fn: scrapeCentury21, accuracy: { low: 0.94, high: 1.06 } },
             // DISABLED - Bot protection:
             // { name: 'Ownerly', fn: scrapeOwnerly, accuracy: { low: 0.93, high: 1.07 } }, // 404 - Wrong URL pattern
             // { name: 'Homesnap', fn: scrapeHomesnap, accuracy: { low: 0.94, high: 1.06 } }, // 403 - BLOCKED
