@@ -442,7 +442,7 @@ const AVMPanel = forwardRef<AVMPanelRef, AVMPanelProps>(({ address, onAddressCha
     };
 
     return (
-        <div className="glass-card p-5 border-2 border-cyan-500/30 bg-gradient-to-br from-slate-900/80 to-cyan-950/40">
+        <div className="glass-card p-5 border border-slate-700 bg-slate-900/80">
             {/* Header */}
             <div className="flex flex-wrap items-center gap-3 mb-4">
                 <div className="w-10 h-10 rounded-xl bg-slate-700 flex items-center justify-center">
@@ -651,7 +651,7 @@ const AVMPanel = forwardRef<AVMPanelRef, AVMPanelProps>(({ address, onAddressCha
                     <button
                         onClick={fetchAVMs}
                         disabled={isLoading || !address.trim()}
-                        className="w-full btn-primary py-4 text-lg font-bold flex items-center justify-center gap-3 mb-4 disabled:opacity-50 disabled:cursor-not-allowed shadow-lg shadow-emerald-500/20"
+                        className="w-full py-3 rounded-lg bg-slate-600 hover:bg-slate-500 text-white font-semibold flex items-center justify-center gap-2 mb-4 disabled:opacity-50 disabled:cursor-not-allowed transition-all"
                     >
                         {isLoading ? (
                             <>
@@ -674,9 +674,9 @@ const AVMPanel = forwardRef<AVMPanelRef, AVMPanelProps>(({ address, onAddressCha
                     {/* Loading Progress */}
                     {isLoading && (
                         <div className="mb-4">
-                            <div className="h-1.5 bg-slate-700 rounded-full overflow-hidden">
+                            <div className="h-1 bg-slate-800 rounded-full overflow-hidden">
                                 <div
-                                    className="h-full bg-gradient-to-r from-cyan-500 to-emerald-500 transition-all duration-100"
+                                    className="h-full bg-slate-500 transition-all duration-100"
                                     style={{ width: `${loadingProgress}%` }}
                                 />
                             </div>
