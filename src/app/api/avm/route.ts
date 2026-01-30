@@ -1911,8 +1911,94 @@ async function scrapeZillowViaGoogle(address: string): Promise<{
         await page.goto(googleUrl, { waitUntil: 'networkidle2', timeout: 20000 });
         await new Promise(r => setTimeout(r, 1500)); // Let page settle
 
+        // DEBUG: Save screenshot and page title to see what Google shows
+        const googleTitle = await page.title();
+        log.log('GOOGLE_PAGE', `Google page title: "${googleTitle}"`);
+
+        // Check for CAPTCHA or bot detection
+        const googleContent = await page.content();
+        const isGoogleCaptcha = googleContent.includes('unusual traffic') ||
+            googleContent.includes('captcha') ||
+            googleContent.includes('verify you') ||
+            googleContent.includes("I'm not a robot") ||
+            googleTitle.includes('Before you continue');
+
+        if (isGoogleCaptcha) {
+            log.log('GOOGLE_CAPTCHA', 'Google CAPTCHA detected - attempting to solve with 2Captcha');
+
+            // Find the reCAPTCHA sitekey
+            const captchaInfo = await page.evaluate(() => {
+                const siteKey = document.querySelector('[data-sitekey]')?.getAttribute('data-sitekey') ||
+                    document.querySelector('.g-recaptcha')?.getAttribute('data-sitekey') || '';
+                const hasRecaptcha = document.querySelector('.g-recaptcha, #recaptcha') !== null ||
+                    document.body.innerHTML.includes('recaptcha');
+                return { siteKey, hasRecaptcha };
+            });
+
+            log.log('CAPTCHA_INFO', `reCAPTCHA info: ${JSON.stringify(captchaInfo)}`);
+
+            if (captchaInfo.siteKey || captchaInfo.hasRecaptcha) {
+                // Use Google's standard reCAPTCHA sitekey if not found
+                const siteKey = captchaInfo.siteKey || '6LfD3PIbAAAAAJs_eEHvoOl75_83eXSqpPSRFJ_u';
+
+                log.log('CAPTCHA_SOLVE', `Solving reCAPTCHA with siteKey: ${siteKey}`);
+                const token = await solveCaptcha(siteKey, googleUrl);
+
+                if (token) {
+                    log.log('CAPTCHA_TOKEN', 'Got CAPTCHA token, injecting and submitting');
+
+                    // Inject the token
+                    await page.evaluate((t) => {
+                        const textarea = document.getElementById('g-recaptcha-response') as HTMLTextAreaElement;
+                        if (textarea) {
+                            textarea.value = t;
+                            textarea.style.display = 'block';
+                        }
+                        // Also try callback
+                        if ((window as unknown as { ___grecaptcha_cfg?: { clients?: Array<{ callback?: (token: string) => void }> } }).___grecaptcha_cfg?.clients?.[0]?.callback) {
+                            ((window as unknown as { ___grecaptcha_cfg: { clients: Array<{ callback: (token: string) => void }> } }).___grecaptcha_cfg.clients[0].callback)(t);
+                        }
+                    }, token);
+
+                    // Click submit if there's a form
+                    await page.evaluate(() => {
+                        const submitBtn = document.querySelector('input[type="submit"], button[type="submit"]') as HTMLElement;
+                        if (submitBtn) submitBtn.click();
+                    });
+
+                    await new Promise(r => setTimeout(r, 3000));
+
+                    // Reload the page with the token
+                    await page.goto(googleUrl, { waitUntil: 'networkidle2', timeout: 20000 });
+                    await new Promise(r => setTimeout(r, 2000));
+
+                    log.log('CAPTCHA_COMPLETE', 'CAPTCHA solved, page reloaded');
+                } else {
+                    log.log('CAPTCHA_FAIL', 'Failed to solve CAPTCHA');
+                    await browser.close();
+                    log.finish(false);
+                    return { url: googleUrl };
+                }
+            } else {
+                log.log('GOOGLE_BLOCKED', 'Google blocking but no solvable reCAPTCHA found');
+                await browser.close();
+                log.finish(false);
+                return { url: googleUrl };
+            }
+        }
+
         // Step 2: Find and click the Zillow link
         log.log('FIND_LINK', 'Looking for Zillow link in results');
+
+        // DEBUG: Log all links found on the page
+        const allLinks = await page.evaluate(() => {
+            return Array.from(document.querySelectorAll('a'))
+                .map(a => a.href)
+                .filter(href => href && href.includes('zillow'))
+                .slice(0, 5);
+        });
+        log.log('DEBUG_LINKS', `Zillow links found: ${JSON.stringify(allLinks)}`);
+
         const zillowLink = await page.evaluate(() => {
             const links = Array.from(document.querySelectorAll('a'));
             for (const link of links) {
@@ -1933,6 +2019,13 @@ async function scrapeZillowViaGoogle(address: string): Promise<{
 
         if (!zillowLink) {
             log.log('NO_LINK', 'No Zillow link found in Google results');
+            // Save debug screenshot
+            try {
+                const debugDir = path.join(process.cwd(), 'zillow-debug');
+                if (!fs.existsSync(debugDir)) fs.mkdirSync(debugDir, { recursive: true });
+                await page.screenshot({ path: path.join(debugDir, `google_${Date.now()}.png`), fullPage: true });
+                log.log('DEBUG_SCREENSHOT', `Saved screenshot to zillow-debug folder`);
+            } catch (e) { /* ignore */ }
             await browser.close();
             log.finish(false);
             return { url: googleUrl };
@@ -1946,6 +2039,18 @@ async function scrapeZillowViaGoogle(address: string): Promise<{
 
         const pageTitle = await page.title();
         log.log('ZILLOW_PAGE', `On Zillow page: ${pageTitle}`);
+
+        // Check for Zillow bot detection
+        const zillowContent = await page.content();
+        const isZillowBlocked = pageTitle.includes('Access Denied') ||
+            zillowContent.includes('Access Denied') ||
+            zillowContent.includes('captcha');
+        if (isZillowBlocked) {
+            log.log('ZILLOW_BLOCKED', 'Zillow bot detection triggered');
+            await browser.close();
+            log.finish(false);
+            return { url: zillowLink };
+        }
 
         // Step 3: Extract the Zestimate from the page
         log.log('EXTRACT', 'Extracting Zestimate from page');
@@ -2063,6 +2168,20 @@ async function scrapeZillowViaGoogle(address: string): Promise<{
             method: data.extractionMethod,
             scrapedAddress: data.scrapedAddress
         });
+
+        // DEBUG: Save screenshot if extraction failed
+        if (data.estimate === 0) {
+            try {
+                const debugDir = path.join(process.cwd(), 'zillow-debug');
+                if (!fs.existsSync(debugDir)) fs.mkdirSync(debugDir, { recursive: true });
+                await page.screenshot({ path: path.join(debugDir, `zillow_page_${Date.now()}.png`), fullPage: true });
+                log.log('DEBUG_SCREENSHOT', `Saved failed extraction screenshot to zillow-debug folder`);
+
+                // Also save page content for analysis
+                const pageHtml = await page.content();
+                fs.writeFileSync(path.join(debugDir, `zillow_html_${Date.now()}.html`), pageHtml.substring(0, 50000));
+            } catch (e) { /* ignore */ }
+        }
 
         log.log('CLOSE', 'Closing browser');
         await browser.close();
