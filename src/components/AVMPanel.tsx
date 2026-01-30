@@ -444,59 +444,57 @@ const AVMPanel = forwardRef<AVMPanelRef, AVMPanelProps>(({ address, onAddressCha
     return (
         <div className="glass-card p-5 border-2 border-cyan-500/30 bg-gradient-to-br from-slate-900/80 to-cyan-950/40">
             {/* Header */}
-            <div className="flex items-center gap-3 mb-4">
-                <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center shadow-lg shadow-cyan-500/30">
-                    <svg className="w-6 h-6 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <div className="flex flex-wrap items-center gap-3 mb-4">
+                <div className="w-10 h-10 rounded-xl bg-slate-700 flex items-center justify-center">
+                    <svg className="w-5 h-5 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
                     </svg>
                 </div>
-                <div className="flex-1">
-                    <h3 className="font-bold text-white text-lg">Property Value Lookup</h3>
-                    <p className="text-sm text-slate-400">
-                        {isManualMode ? 'Manual entry mode' : hasResults ? `${foundCount} of 7 sources found` : 'Enter address and fetch values'}
+                <div className="flex-1 min-w-0">
+                    <h3 className="font-semibold text-white text-base">Property Value Lookup</h3>
+                    <p className="text-xs text-slate-500 truncate">
+                        {isManualMode ? 'Manual entry' : hasResults ? `${foundCount} sources found` : 'Enter address'}
                     </p>
                 </div>
                 {/* Mode Toggle */}
-                <div className="flex items-center gap-2">
+                <div className="flex items-center">
                     <button
                         onClick={() => setIsManualMode(false)}
-                        className={`px-3 py-1.5 rounded-l-lg text-xs font-medium transition-all ${!isManualMode
-                            ? 'bg-cyan-500 text-white'
-                            : 'bg-slate-700 text-slate-400 hover:text-white'
+                        className={`px-2.5 py-1 rounded-l text-xs font-medium transition-all ${!isManualMode
+                            ? 'bg-slate-600 text-white'
+                            : 'bg-slate-800 text-slate-500 hover:text-slate-300'
                             }`}
                     >
                         Auto
                     </button>
                     <button
                         onClick={() => setIsManualMode(true)}
-                        className={`px-3 py-1.5 rounded-r-lg text-xs font-medium transition-all ${isManualMode
-                            ? 'bg-amber-500 text-white'
-                            : 'bg-slate-700 text-slate-400 hover:text-white'
+                        className={`px-2.5 py-1 rounded-r text-xs font-medium transition-all ${isManualMode
+                            ? 'bg-slate-600 text-white'
+                            : 'bg-slate-800 text-slate-500 hover:text-slate-300'
                             }`}
                     >
                         Manual
                     </button>
                 </div>
                 {/* History Button */}
-                <div className="relative">
-                    <button
-                        onClick={() => setShowHistory(!showHistory)}
-                        className={`p-2 rounded-lg transition-all ${showHistory
-                            ? 'bg-cyan-500/30 text-cyan-300'
-                            : 'bg-slate-800/60 text-slate-400 hover:text-white hover:bg-slate-700/60'
-                            }`}
-                        title={`History (${history.length})`}
-                    >
-                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
-                        </svg>
-                    </button>
+                <button
+                    onClick={() => setShowHistory(!showHistory)}
+                    className={`p-1.5 rounded transition-all relative ${showHistory
+                        ? 'bg-slate-700 text-slate-300'
+                        : 'bg-slate-800 text-slate-500 hover:text-slate-300'
+                        }`}
+                    title={`History (${history.length})`}
+                >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
                     {history.length > 0 && !showHistory && (
-                        <span className="absolute -top-1 -right-1 w-4 h-4 bg-cyan-500 rounded-full text-xs flex items-center justify-center text-white font-bold">
-                            {history.length > 9 ? '9+' : history.length}
+                        <span className="absolute -top-1 -right-1 w-3.5 h-3.5 bg-slate-500 rounded-full text-[10px] flex items-center justify-center text-white">
+                            {history.length > 9 ? '9' : history.length}
                         </span>
                     )}
-                </div>
+                </button>
             </div>
 
             {/* History Dropdown */}
@@ -571,9 +569,9 @@ const AVMPanel = forwardRef<AVMPanelRef, AVMPanelProps>(({ address, onAddressCha
 
             {/* Manual Mode Form */}
             {isManualMode ? (
-                <div className="space-y-4 mb-4 p-4 rounded-xl bg-gradient-to-br from-amber-900/20 to-slate-800/50 border border-amber-500/30">
-                    <div className="flex items-center gap-2 text-amber-400 text-sm font-medium mb-2">
-                        <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <div className="space-y-3 mb-4 p-4 rounded-lg bg-slate-800/60 border border-slate-700">
+                    <div className="flex items-center gap-2 text-slate-400 text-xs font-medium">
+                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
                         </svg>
                         Manual Entry
@@ -581,9 +579,9 @@ const AVMPanel = forwardRef<AVMPanelRef, AVMPanelProps>(({ address, onAddressCha
 
                     {/* ARV Input */}
                     <div>
-                        <label className="block text-xs text-slate-400 mb-1">After Repair Value (ARV)</label>
+                        <label className="block text-xs text-slate-500 mb-1">ARV</label>
                         <div className="relative">
-                            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 text-lg">$</span>
+                            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500">$</span>
                             <input
                                 type="text"
                                 value={manualARV}
@@ -596,15 +594,15 @@ const AVMPanel = forwardRef<AVMPanelRef, AVMPanelProps>(({ address, onAddressCha
                                     }
                                 }}
                                 placeholder="Enter ARV..."
-                                className="w-full pl-8 pr-3 py-3 rounded-lg bg-slate-900/80 border border-amber-500/30 text-white text-lg font-semibold placeholder-slate-500 focus:border-amber-500/50 focus:ring-2 focus:ring-amber-500/20 focus:outline-none transition-all"
+                                className="w-full pl-7 pr-3 py-2.5 rounded bg-slate-900 border border-slate-700 text-white font-medium placeholder-slate-600 focus:border-slate-500 focus:outline-none transition-all"
                             />
                         </div>
                     </div>
 
                     {/* Property Details Row */}
-                    <div className="grid grid-cols-3 gap-3">
+                    <div className="grid grid-cols-3 gap-2">
                         <div>
-                            <label className="block text-xs text-slate-400 mb-1">Sq Ft</label>
+                            <label className="block text-xs text-slate-500 mb-1">Sq Ft</label>
                             <input
                                 type="text"
                                 value={manualSqft}
@@ -613,27 +611,27 @@ const AVMPanel = forwardRef<AVMPanelRef, AVMPanelProps>(({ address, onAddressCha
                                     setManualSqft(val ? parseInt(val).toLocaleString() : '');
                                 }}
                                 placeholder="1,500"
-                                className="w-full px-3 py-2 rounded-lg bg-slate-900/80 border border-slate-600/50 text-white placeholder-slate-500 focus:border-amber-500/50 focus:outline-none transition-all text-sm"
+                                className="w-full px-2 py-2 rounded bg-slate-900 border border-slate-700 text-white placeholder-slate-600 focus:border-slate-500 focus:outline-none transition-all text-sm"
                             />
                         </div>
                         <div>
-                            <label className="block text-xs text-slate-400 mb-1">Beds</label>
+                            <label className="block text-xs text-slate-500 mb-1">Beds</label>
                             <input
                                 type="text"
                                 value={manualBeds}
                                 onChange={(e) => setManualBeds(e.target.value.replace(/[^0-9]/g, ''))}
                                 placeholder="3"
-                                className="w-full px-3 py-2 rounded-lg bg-slate-900/80 border border-slate-600/50 text-white placeholder-slate-500 focus:border-amber-500/50 focus:outline-none transition-all text-sm"
+                                className="w-full px-2 py-2 rounded bg-slate-900 border border-slate-700 text-white placeholder-slate-600 focus:border-slate-500 focus:outline-none transition-all text-sm"
                             />
                         </div>
                         <div>
-                            <label className="block text-xs text-slate-400 mb-1">Baths</label>
+                            <label className="block text-xs text-slate-500 mb-1">Baths</label>
                             <input
                                 type="text"
                                 value={manualBaths}
                                 onChange={(e) => setManualBaths(e.target.value.replace(/[^0-9.]/g, ''))}
                                 placeholder="2"
-                                className="w-full px-3 py-2 rounded-lg bg-slate-900/80 border border-slate-600/50 text-white placeholder-slate-500 focus:border-amber-500/50 focus:outline-none transition-all text-sm"
+                                className="w-full px-2 py-2 rounded bg-slate-900 border border-slate-700 text-white placeholder-slate-600 focus:border-slate-500 focus:outline-none transition-all text-sm"
                             />
                         </div>
                     </div>
@@ -642,9 +640,9 @@ const AVMPanel = forwardRef<AVMPanelRef, AVMPanelProps>(({ address, onAddressCha
                     <button
                         onClick={applyManualARV}
                         disabled={!manualARV}
-                        className="w-full py-3 rounded-lg bg-amber-600 hover:bg-amber-500 disabled:bg-slate-700 disabled:text-slate-500 text-white font-bold text-lg transition-all shadow-lg shadow-amber-500/20"
+                        className="w-full py-2.5 rounded bg-slate-600 hover:bg-slate-500 disabled:bg-slate-800 disabled:text-slate-600 text-white font-medium transition-all"
                     >
-                        Apply Manual Values
+                        Apply Values
                     </button>
                 </div>
             ) : (
@@ -689,24 +687,24 @@ const AVMPanel = forwardRef<AVMPanelRef, AVMPanelProps>(({ address, onAddressCha
                     <div className="mb-4">
                         <button
                             onClick={() => setShowManualEntry(!showManualEntry)}
-                            className="w-full flex items-center justify-between px-4 py-3 rounded-lg bg-slate-800/60 border border-slate-600/50 hover:border-slate-500/50 transition-all text-sm"
+                            className="w-full flex items-center justify-between px-3 py-2.5 rounded bg-slate-800 border border-slate-700 hover:border-slate-600 transition-all text-sm"
                         >
                             <div className="flex items-center gap-2">
-                                <svg className="w-4 h-4 text-amber-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <svg className="w-3.5 h-3.5 text-slate-400" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
                                 </svg>
-                                <span className="text-slate-300">Manual ARV Override</span>
+                                <span className="text-slate-400">Manual Override</span>
                             </div>
-                            <svg className={`w-4 h-4 text-slate-400 transition-transform ${showManualEntry ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <svg className={`w-3.5 h-3.5 text-slate-500 transition-transform ${showManualEntry ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
                             </svg>
                         </button>
                         {showManualEntry && (
-                            <div className="mt-2 p-4 rounded-lg bg-slate-800/80 border border-slate-600/50 animate-fade-in">
-                                <p className="text-xs text-slate-400 mb-3">Enter custom ARV if sources are unavailable or you prefer your own estimate</p>
+                            <div className="mt-2 p-3 rounded bg-slate-800 border border-slate-700">
+                                <p className="text-xs text-slate-500 mb-2">Enter custom ARV</p>
                                 <div className="flex gap-2">
                                     <div className="relative flex-1">
-                                        <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">$</span>
+                                        <span className="absolute left-2.5 top-1/2 -translate-y-1/2 text-slate-500">$</span>
                                         <input
                                             type="text"
                                             value={manualARV}
@@ -718,14 +716,14 @@ const AVMPanel = forwardRef<AVMPanelRef, AVMPanelProps>(({ address, onAddressCha
                                                     setManualARV('');
                                                 }
                                             }}
-                                            placeholder="Enter amount..."
-                                            className="w-full pl-7 pr-3 py-2.5 rounded-lg bg-slate-900/80 border border-slate-600/50 text-white placeholder-slate-500 focus:border-amber-500/50 focus:ring-2 focus:ring-amber-500/20 focus:outline-none transition-all"
+                                            placeholder="Amount"
+                                            className="w-full pl-6 pr-2 py-2 rounded bg-slate-900 border border-slate-700 text-white placeholder-slate-600 focus:border-slate-500 focus:outline-none transition-all text-sm"
                                         />
                                     </div>
                                     <button
                                         onClick={applyManualARV}
                                         disabled={!manualARV}
-                                        className="px-4 py-2.5 rounded-lg bg-amber-600 hover:bg-amber-500 disabled:bg-slate-700 disabled:text-slate-500 text-white font-medium transition-all"
+                                        className="px-3 py-2 rounded bg-slate-600 hover:bg-slate-500 disabled:bg-slate-800 disabled:text-slate-600 text-white text-sm font-medium transition-all"
                                     >
                                         Apply
                                     </button>
@@ -738,17 +736,17 @@ const AVMPanel = forwardRef<AVMPanelRef, AVMPanelProps>(({ address, onAddressCha
 
             {/* Simple Source Status */}
             {isLoading && (
-                <div className="flex items-center gap-2 text-sm text-cyan-400 mb-4">
-                    <div className="w-4 h-4 border-2 border-cyan-400 border-t-transparent rounded-full animate-spin" />
+                <div className="flex items-center gap-2 text-sm text-slate-400 mb-4">
+                    <div className="w-3.5 h-3.5 border-2 border-slate-400 border-t-transparent rounded-full animate-spin" />
                     <span>Checking {AVM_SOURCES.length} sources...</span>
                 </div>
             )}
             {!isLoading && foundCount > 0 && (
-                <div className="flex items-center gap-2 text-sm text-emerald-400 mb-4">
-                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <div className="flex items-center gap-2 text-sm text-slate-300 mb-4">
+                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 13l4 4L19 7" />
                     </svg>
-                    <span>{foundCount} of {AVM_SOURCES.length} sources found values</span>
+                    <span>{foundCount} sources found</span>
                 </div>
             )}
 
