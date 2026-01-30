@@ -460,18 +460,18 @@ const AVMPanel = forwardRef<AVMPanelRef, AVMPanelProps>(({ address, onAddressCha
                 <div className="flex items-center">
                     <button
                         onClick={() => setIsManualMode(false)}
-                        className={`px-2.5 py-1 rounded-l text-xs font-medium transition-all ${!isManualMode
+                        className={`px-3 py-1.5 rounded-l text-xs font-medium transition-all ${!isManualMode
                             ? 'bg-slate-600 text-white'
-                            : 'bg-slate-800 text-slate-500 hover:text-slate-300'
+                            : 'bg-slate-800 text-slate-400 hover:text-slate-200'
                             }`}
                     >
                         Auto
                     </button>
                     <button
                         onClick={() => setIsManualMode(true)}
-                        className={`px-2.5 py-1 rounded-r text-xs font-medium transition-all ${isManualMode
+                        className={`px-3 py-1.5 rounded-r text-xs font-medium transition-all ${isManualMode
                             ? 'bg-slate-600 text-white'
-                            : 'bg-slate-800 text-slate-500 hover:text-slate-300'
+                            : 'bg-slate-800 text-slate-400 hover:text-slate-200'
                             }`}
                     >
                         Manual
@@ -569,40 +569,29 @@ const AVMPanel = forwardRef<AVMPanelRef, AVMPanelProps>(({ address, onAddressCha
 
             {/* Manual Mode Form */}
             {isManualMode ? (
-                <div className="space-y-3 mb-4 p-4 rounded-lg bg-slate-800/60 border border-slate-700">
-                    <div className="flex items-center gap-2 text-slate-400 text-xs font-medium">
-                        <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z" />
-                        </svg>
-                        Manual Entry
-                    </div>
-
-                    {/* ARV Input */}
-                    <div>
-                        <label className="block text-xs text-slate-500 mb-1">ARV</label>
-                        <div className="relative">
-                            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500">$</span>
-                            <input
-                                type="text"
-                                value={manualARV}
-                                onChange={(e) => {
-                                    const val = e.target.value.replace(/[^0-9]/g, '');
-                                    if (val) {
-                                        setManualARV(parseInt(val).toLocaleString());
-                                    } else {
-                                        setManualARV('');
-                                    }
-                                }}
-                                placeholder="Enter ARV..."
-                                className="w-full pl-7 pr-3 py-2.5 rounded bg-slate-900 border border-slate-700 text-white font-medium placeholder-slate-600 focus:border-slate-500 focus:outline-none transition-all"
-                            />
-                        </div>
-                    </div>
-
-                    {/* Property Details Row */}
-                    <div className="grid grid-cols-3 gap-2">
+                <div className="mb-4 p-4 rounded-lg bg-slate-800/50 border border-slate-700/50">
+                    {/* Simple 2x2 Grid - Works great on all screen sizes */}
+                    <div className="grid grid-cols-2 gap-3">
+                        {/* ARV */}
                         <div>
-                            <label className="block text-xs text-slate-500 mb-1">Sq Ft</label>
+                            <label className="block text-xs text-slate-400 mb-1.5">ARV</label>
+                            <div className="relative">
+                                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500">$</span>
+                                <input
+                                    type="text"
+                                    value={manualARV}
+                                    onChange={(e) => {
+                                        const val = e.target.value.replace(/[^0-9]/g, '');
+                                        setManualARV(val ? parseInt(val).toLocaleString() : '');
+                                    }}
+                                    placeholder="480,000"
+                                    className="w-full pl-7 pr-2 py-2.5 rounded-lg bg-slate-900/80 border border-slate-600 text-white font-medium placeholder-slate-600 focus:border-slate-500 focus:outline-none transition-all"
+                                />
+                            </div>
+                        </div>
+                        {/* Sq Ft */}
+                        <div>
+                            <label className="block text-xs text-slate-400 mb-1.5">Sq Ft</label>
                             <input
                                 type="text"
                                 value={manualSqft}
@@ -610,39 +599,40 @@ const AVMPanel = forwardRef<AVMPanelRef, AVMPanelProps>(({ address, onAddressCha
                                     const val = e.target.value.replace(/[^0-9]/g, '');
                                     setManualSqft(val ? parseInt(val).toLocaleString() : '');
                                 }}
-                                placeholder="1,500"
-                                className="w-full px-2 py-2 rounded bg-slate-900 border border-slate-700 text-white placeholder-slate-600 focus:border-slate-500 focus:outline-none transition-all text-sm"
+                                placeholder="1,850"
+                                className="w-full px-3 py-2.5 rounded-lg bg-slate-900/80 border border-slate-600 text-white placeholder-slate-600 focus:border-slate-500 focus:outline-none transition-all"
                             />
                         </div>
+                        {/* Beds */}
                         <div>
-                            <label className="block text-xs text-slate-500 mb-1">Beds</label>
+                            <label className="block text-xs text-slate-400 mb-1.5">Beds</label>
                             <input
                                 type="text"
                                 value={manualBeds}
                                 onChange={(e) => setManualBeds(e.target.value.replace(/[^0-9]/g, ''))}
                                 placeholder="3"
-                                className="w-full px-2 py-2 rounded bg-slate-900 border border-slate-700 text-white placeholder-slate-600 focus:border-slate-500 focus:outline-none transition-all text-sm"
+                                className="w-full px-3 py-2.5 rounded-lg bg-slate-900/80 border border-slate-600 text-white placeholder-slate-600 focus:border-slate-500 focus:outline-none transition-all"
                             />
                         </div>
+                        {/* Baths */}
                         <div>
-                            <label className="block text-xs text-slate-500 mb-1">Baths</label>
+                            <label className="block text-xs text-slate-400 mb-1.5">Baths</label>
                             <input
                                 type="text"
                                 value={manualBaths}
                                 onChange={(e) => setManualBaths(e.target.value.replace(/[^0-9.]/g, ''))}
                                 placeholder="2"
-                                className="w-full px-2 py-2 rounded bg-slate-900 border border-slate-700 text-white placeholder-slate-600 focus:border-slate-500 focus:outline-none transition-all text-sm"
+                                className="w-full px-3 py-2.5 rounded-lg bg-slate-900/80 border border-slate-600 text-white placeholder-slate-600 focus:border-slate-500 focus:outline-none transition-all"
                             />
                         </div>
                     </div>
-
                     {/* Apply Button */}
                     <button
                         onClick={applyManualARV}
                         disabled={!manualARV}
-                        className="w-full py-2.5 rounded bg-slate-600 hover:bg-slate-500 disabled:bg-slate-800 disabled:text-slate-600 text-white font-medium transition-all"
+                        className="w-full mt-3 py-2.5 rounded-lg bg-slate-600 hover:bg-slate-500 disabled:bg-slate-800 disabled:text-slate-600 text-white font-medium transition-all"
                     >
-                        Apply Values
+                        Apply
                     </button>
                 </div>
             ) : (
