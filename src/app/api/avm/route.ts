@@ -3655,6 +3655,277 @@ async function scrapeOpendoor(address: string): Promise<{
 }
 
 // ============================================
+// EPPRAISAL HOME VALUE ESTIMATOR
+// Uses proxy for better success rate
+// ============================================
+async function scrapeEppraisal(address: string): Promise<{
+    estimate?: number;
+    low?: number;
+    high?: number;
+    url: string;
+    propertyData?: Partial<PropertyData>;
+} | null> {
+    const log = new ScraperLogger('Eppraisal');
+    let browser: Browser | null = null;
+    try {
+        const useProxy = isProxyConfigured();
+        log.log('BROWSER', `Creating stealth browser (proxy: ${useProxy})`);
+        browser = await createStealthBrowser(useProxy);
+        const page = await browser.newPage();
+        log.log('CONFIG', 'Configuring page');
+        await configurePage(page);
+        await configurePageWithProxy(page, useProxy);
+
+        const searchUrl = 'https://www.eppraisal.com/';
+        log.log('NAVIGATE', `Going to: ${searchUrl}`);
+        await page.goto(searchUrl, { waitUntil: 'networkidle2', timeout: 30000 });
+        await new Promise(r => setTimeout(r, 2000));
+
+        // Try to find and fill address input
+        const addressInput = await page.$('input[type="text"], input[placeholder*="address"], input[name*="address"], #address');
+        if (addressInput) {
+            log.log('INPUT', 'Found address input');
+            await addressInput.type(address, { delay: 50 });
+            await new Promise(r => setTimeout(r, 1000));
+            await page.keyboard.press('Enter');
+            await new Promise(r => setTimeout(r, 3000));
+        }
+
+        const data = await page.evaluate(() => {
+            const text = document.body.innerText;
+            let estimate = 0;
+
+            const pricePatterns = [
+                /\$([0-9]{1,3}(?:,[0-9]{3})+)/,
+                /([0-9]{1,3}(?:,[0-9]{3})+)\s*(?:estimated|value)/i,
+            ];
+            for (const pattern of pricePatterns) {
+                const match = text.match(pattern);
+                if (match) {
+                    estimate = parseInt(match[1].replace(/,/g, ''));
+                    if (estimate > 50000 && estimate < 50000000) break;
+                }
+            }
+
+            const sqftMatch = text.match(/([\\d,]+)\\s*(?:sq\\.?\\s*ft|sqft)/i);
+            const bedsMatch = text.match(/(\\d+)\\s*bed/i);
+            const bathsMatch = text.match(/([\\d.]+)\\s*bath/i);
+
+            return {
+                estimate,
+                sqft: sqftMatch ? parseInt(sqftMatch[1].replace(/,/g, '')) : 0,
+                beds: bedsMatch ? parseInt(bedsMatch[1]) : 0,
+                baths: bathsMatch ? parseFloat(bathsMatch[1]) : 0,
+            };
+        });
+
+        const finalUrl = page.url();
+        await browser.close();
+
+        if (data.estimate > 0) {
+            const result = {
+                estimate: data.estimate,
+                low: Math.round(data.estimate * 0.92),
+                high: Math.round(data.estimate * 1.08),
+                url: finalUrl,
+                propertyData: { sqft: data.sqft, beds: data.beds, baths: data.baths, yearBuilt: 0, lotSize: 0 },
+            };
+            log.finish(true, result);
+            return result;
+        }
+
+        log.finish(false);
+        return { url: finalUrl };
+    } catch (error) {
+        log.error('EXCEPTION', error);
+        if (browser) await browser.close();
+        return null;
+    }
+}
+
+// ============================================
+// PENNYMAC HOME VALUE ESTIMATOR
+// Uses proxy for better success rate
+// ============================================
+async function scrapePennyMac(address: string): Promise<{
+    estimate?: number;
+    low?: number;
+    high?: number;
+    url: string;
+    propertyData?: Partial<PropertyData>;
+} | null> {
+    const log = new ScraperLogger('PennyMac');
+    let browser: Browser | null = null;
+    try {
+        const useProxy = isProxyConfigured();
+        log.log('BROWSER', `Creating stealth browser (proxy: ${useProxy})`);
+        browser = await createStealthBrowser(useProxy);
+        const page = await browser.newPage();
+        log.log('CONFIG', 'Configuring page');
+        await configurePage(page);
+        await configurePageWithProxy(page, useProxy);
+
+        const searchUrl = 'https://www.pennymac.com/home-value';
+        log.log('NAVIGATE', `Going to: ${searchUrl}`);
+        await page.goto(searchUrl, { waitUntil: 'networkidle2', timeout: 30000 });
+        await new Promise(r => setTimeout(r, 2000));
+
+        // Find and fill address input
+        const addressInput = await page.$('input[type="text"], input[placeholder*="address"], input[name*="address"], #address');
+        if (addressInput) {
+            log.log('INPUT', 'Found address input');
+            await addressInput.type(address, { delay: 50 });
+            await new Promise(r => setTimeout(r, 1500));
+            await page.keyboard.press('Enter');
+            await new Promise(r => setTimeout(r, 4000));
+        }
+
+        const data = await page.evaluate(() => {
+            const text = document.body.innerText;
+            const html = document.body.innerHTML;
+            let estimate = 0;
+
+            const pricePatterns = [
+                /\"estimatedValue\"\\s*:\\s*(\\d+)/i,
+                /\"homeValue\"\\s*:\\s*(\\d+)/i,
+                /\\$([0-9]{1,3}(?:,[0-9]{3})+)/,
+            ];
+            for (const pattern of pricePatterns) {
+                const match = (html + text).match(pattern);
+                if (match) {
+                    estimate = parseInt(match[1].replace(/,/g, ''));
+                    if (estimate > 50000 && estimate < 50000000) break;
+                }
+            }
+
+            const sqftMatch = text.match(/([\\d,]+)\\s*(?:sq\\.?\\s*ft|sqft)/i);
+            const bedsMatch = text.match(/(\\d+)\\s*bed/i);
+            const bathsMatch = text.match(/([\\d.]+)\\s*bath/i);
+
+            return {
+                estimate,
+                sqft: sqftMatch ? parseInt(sqftMatch[1].replace(/,/g, '')) : 0,
+                beds: bedsMatch ? parseInt(bedsMatch[1]) : 0,
+                baths: bathsMatch ? parseFloat(bathsMatch[1]) : 0,
+            };
+        });
+
+        const finalUrl = page.url();
+        await browser.close();
+
+        if (data.estimate > 0) {
+            const result = {
+                estimate: data.estimate,
+                low: Math.round(data.estimate * 0.93),
+                high: Math.round(data.estimate * 1.07),
+                url: finalUrl,
+                propertyData: { sqft: data.sqft, beds: data.beds, baths: data.baths, yearBuilt: 0, lotSize: 0 },
+            };
+            log.finish(true, result);
+            return result;
+        }
+
+        log.finish(false);
+        return { url: finalUrl };
+    } catch (error) {
+        log.error('EXCEPTION', error);
+        if (browser) await browser.close();
+        return null;
+    }
+}
+
+// ============================================
+// HOMELIGHT HOME VALUE ESTIMATOR
+// Uses proxy for better success rate
+// ============================================
+async function scrapeHomeLight(address: string): Promise<{
+    estimate?: number;
+    low?: number;
+    high?: number;
+    url: string;
+    propertyData?: Partial<PropertyData>;
+} | null> {
+    const log = new ScraperLogger('HomeLight');
+    let browser: Browser | null = null;
+    try {
+        const useProxy = isProxyConfigured();
+        log.log('BROWSER', `Creating stealth browser (proxy: ${useProxy})`);
+        browser = await createStealthBrowser(useProxy);
+        const page = await browser.newPage();
+        log.log('CONFIG', 'Configuring page');
+        await configurePage(page);
+        await configurePageWithProxy(page, useProxy);
+
+        const searchUrl = 'https://www.homelight.com/home-value-estimator';
+        log.log('NAVIGATE', `Going to: ${searchUrl}`);
+        await page.goto(searchUrl, { waitUntil: 'networkidle2', timeout: 30000 });
+        await new Promise(r => setTimeout(r, 2000));
+
+        // Find and fill address input
+        const addressInput = await page.$('input[type="text"], input[placeholder*="address"], input[name*="address"]');
+        if (addressInput) {
+            log.log('INPUT', 'Found address input');
+            await addressInput.type(address, { delay: 50 });
+            await new Promise(r => setTimeout(r, 1500));
+            await page.keyboard.press('Enter');
+            await new Promise(r => setTimeout(r, 4000));
+        }
+
+        const data = await page.evaluate(() => {
+            const text = document.body.innerText;
+            const html = document.body.innerHTML;
+            let estimate = 0;
+
+            const pricePatterns = [
+                /\"estimatedValue\"\\s*:\\s*(\\d+)/i,
+                /\"value\"\\s*:\\s*(\\d+)/i,
+                /\\$([0-9]{1,3}(?:,[0-9]{3})+)/,
+            ];
+            for (const pattern of pricePatterns) {
+                const match = (html + text).match(pattern);
+                if (match) {
+                    estimate = parseInt(match[1].replace(/,/g, ''));
+                    if (estimate > 50000 && estimate < 50000000) break;
+                }
+            }
+
+            const sqftMatch = text.match(/([\\d,]+)\\s*(?:sq\\.?\\s*ft|sqft)/i);
+            const bedsMatch = text.match(/(\\d+)\\s*bed/i);
+            const bathsMatch = text.match(/([\\d.]+)\\s*bath/i);
+
+            return {
+                estimate,
+                sqft: sqftMatch ? parseInt(sqftMatch[1].replace(/,/g, '')) : 0,
+                beds: bedsMatch ? parseInt(bedsMatch[1]) : 0,
+                baths: bathsMatch ? parseFloat(bathsMatch[1]) : 0,
+            };
+        });
+
+        const finalUrl = page.url();
+        await browser.close();
+
+        if (data.estimate > 0) {
+            const result = {
+                estimate: data.estimate,
+                low: Math.round(data.estimate * 0.93),
+                high: Math.round(data.estimate * 1.07),
+                url: finalUrl,
+                propertyData: { sqft: data.sqft, beds: data.beds, baths: data.baths, yearBuilt: 0, lotSize: 0 },
+            };
+            log.finish(true, result);
+            return result;
+        }
+
+        log.finish(false);
+        return { url: finalUrl };
+    } catch (error) {
+        log.error('EXCEPTION', error);
+        if (browser) await browser.close();
+        return null;
+    }
+}
+
+// ============================================
 // AGGREGATE PROPERTY DATA
 // ============================================
 function aggregatePropertyData(results: Array<{ propertyData?: Partial<PropertyData> } | null>): PropertyData {
@@ -3713,6 +3984,10 @@ export async function POST(request: NextRequest) {
             { name: 'ComeHome', fn: scrapeComeHome, accuracy: { low: 0.94, high: 1.06 } },
             { name: 'Bank of America', fn: scrapeBankOfAmerica, accuracy: { low: 0.95, high: 1.05 } },
             { name: 'Xome', fn: scrapeXome, accuracy: { low: 0.90, high: 1.10 } },
+            // NEW - Accessible via US proxy:
+            { name: 'Eppraisal', fn: scrapeEppraisal, accuracy: { low: 0.92, high: 1.08 } },
+            { name: 'PennyMac', fn: scrapePennyMac, accuracy: { low: 0.93, high: 1.07 } },
+            { name: 'HomeLight', fn: scrapeHomeLight, accuracy: { low: 0.93, high: 1.07 } },
             // DISABLED - Bot protection:
             // { name: 'Ownerly', fn: scrapeOwnerly, accuracy: { low: 0.93, high: 1.07 } }, // 404 - Wrong URL pattern
             // { name: 'Homesnap', fn: scrapeHomesnap, accuracy: { low: 0.94, high: 1.06 } }, // 403 - BLOCKED
