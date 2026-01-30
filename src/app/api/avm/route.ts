@@ -62,25 +62,57 @@ async function saveNARRPRDebug(page: Page, step: string, log: ScraperLogger): Pr
 }
 
 // ============================================
+// PROXY CONFIGURATION FOR BYPASSING BOT DETECTION
+// ============================================
+const PROXY_CONFIG = {
+    host: process.env.PROXY_HOST || '',
+    port: process.env.PROXY_PORT || '',
+    user: process.env.PROXY_USER || '',
+    pass: process.env.PROXY_PASS || '',
+};
+
+const isProxyConfigured = (): boolean => !!(PROXY_CONFIG.host && PROXY_CONFIG.port);
+
+// ============================================
 // BROWSER CONFIGURATION WITH STEALTH PLUGIN
 // Uses puppeteer-extra-plugin-stealth for advanced evasion
 // ============================================
-async function createStealthBrowser(): Promise<Browser> {
+async function createStealthBrowser(useProxy = false): Promise<Browser> {
+    const args = [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',
+        '--disable-accelerated-2d-canvas',
+        '--disable-gpu',
+        '--window-size=1920,1080',
+        '--disable-blink-features=AutomationControlled',
+        '--disable-features=IsolateOrigins,site-per-process',
+        '--disable-web-security',
+        '--disable-features=VizDisplayCompositor',
+    ];
+
+    // Add proxy server if configured and requested
+    if (useProxy && isProxyConfigured()) {
+        args.push(`--proxy-server=${PROXY_CONFIG.host}:${PROXY_CONFIG.port}`);
+        console.log(`[PROXY] Using proxy: ${PROXY_CONFIG.host}:${PROXY_CONFIG.port}`);
+    }
+
     return puppeteer.launch({
         headless: true,
-        args: [
-            '--no-sandbox',
-            '--disable-setuid-sandbox',
-            '--disable-dev-shm-usage',
-            '--disable-accelerated-2d-canvas',
-            '--disable-gpu',
-            '--window-size=1920,1080',
-            '--disable-blink-features=AutomationControlled',
-            '--disable-features=IsolateOrigins,site-per-process',
-            '--disable-web-security',
-            '--disable-features=VizDisplayCompositor',
-        ],
+        args,
     }) as Promise<Browser>;
+}
+
+// Configure page with proxy authentication if needed
+async function configurePageWithProxy(page: Page, useProxy = false): Promise<void> {
+    // Authenticate with proxy if configured
+    if (useProxy && isProxyConfigured() && PROXY_CONFIG.user && PROXY_CONFIG.pass) {
+        await page.authenticate({
+            username: PROXY_CONFIG.user,
+            password: PROXY_CONFIG.pass,
+        });
+        console.log('[PROXY] Authenticated with proxy');
+    }
 }
 
 async function configurePage(page: Page): Promise<void> {
@@ -1894,14 +1926,17 @@ async function scrapeZillowViaGoogle(address: string): Promise<{
     let browser: Browser | null = null;
 
     try {
-        log.log('BROWSER', 'Creating stealth browser');
-        browser = await createStealthBrowser();
+        // Use proxy for Zillow to bypass IP-based blocking (combined with 2Captcha for CAPTCHAs)
+        const useProxy = isProxyConfigured();
+        log.log('BROWSER', `Creating stealth browser (proxy: ${useProxy ? 'enabled' : 'disabled'})`);
+        browser = await createStealthBrowser(useProxy);
 
         log.log('PAGE', 'Creating new page');
         const page = await browser.newPage();
 
         log.log('CONFIG', 'Configuring page');
         await configurePage(page);
+        await configurePageWithProxy(page, useProxy);
 
         // Step 1: Google the address + zillow
         const googleQuery = `${address} zillow`;
