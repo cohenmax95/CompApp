@@ -1879,6 +1879,222 @@ async function fetchXomeHTTP(address: string): Promise<{
 }
 
 // ============================================
+// ZILLOW VIA GOOGLE - The human approach!
+// Google the address, click Zillow link, get Zestimate
+// This bypasses bot detection by coming from Google
+// ============================================
+async function scrapeZillowViaGoogle(address: string): Promise<{
+    estimate?: number;
+    low?: number;
+    high?: number;
+    url: string;
+    propertyData?: Partial<PropertyData>;
+} | null> {
+    const log = new ScraperLogger('ZillowViaGoogle');
+    let browser: Browser | null = null;
+
+    try {
+        log.log('BROWSER', 'Creating stealth browser');
+        browser = await createStealthBrowser();
+
+        log.log('PAGE', 'Creating new page');
+        const page = await browser.newPage();
+
+        log.log('CONFIG', 'Configuring page');
+        await configurePage(page);
+
+        // Step 1: Google the address + zillow
+        const googleQuery = `${address} zillow`;
+        const googleUrl = `https://www.google.com/search?q=${encodeURIComponent(googleQuery)}`;
+        log.log('GOOGLE', `Searching Google: "${googleQuery}"`);
+
+        await page.goto(googleUrl, { waitUntil: 'networkidle2', timeout: 20000 });
+        await new Promise(r => setTimeout(r, 1500)); // Let page settle
+
+        // Step 2: Find and click the Zillow link
+        log.log('FIND_LINK', 'Looking for Zillow link in results');
+        const zillowLink = await page.evaluate(() => {
+            const links = Array.from(document.querySelectorAll('a'));
+            for (const link of links) {
+                const href = link.href || '';
+                if (href.includes('zillow.com') && (href.includes('/homedetails/') || href.includes('/homes/'))) {
+                    return href;
+                }
+            }
+            // Fallback: look for any zillow.com link
+            for (const link of links) {
+                const href = link.href || '';
+                if (href.includes('zillow.com') && !href.includes('google.com')) {
+                    return href;
+                }
+            }
+            return null;
+        });
+
+        if (!zillowLink) {
+            log.log('NO_LINK', 'No Zillow link found in Google results');
+            await browser.close();
+            log.finish(false);
+            return { url: googleUrl };
+        }
+
+        log.log('CLICK', `Found Zillow link: ${zillowLink}`);
+
+        // Navigate to Zillow page (coming from Google!)
+        await page.goto(zillowLink, { waitUntil: 'networkidle2', timeout: 25000 });
+        await new Promise(r => setTimeout(r, 2000)); // Wait for page to fully load
+
+        const pageTitle = await page.title();
+        log.log('ZILLOW_PAGE', `On Zillow page: ${pageTitle}`);
+
+        // Step 3: Extract the Zestimate from the page
+        log.log('EXTRACT', 'Extracting Zestimate from page');
+        const data = await page.evaluate(() => {
+            let estimate = 0;
+            let low = 0;
+            let high = 0;
+            let sqft = 0, beds = 0, baths = 0, yearBuilt = 0, lotSize = 0;
+            let scrapedAddress = '';
+            let extractionMethod = 'none';
+
+            // Method 1: Look for Zestimate in visible text
+            const allText = document.body.innerText;
+
+            // Pattern: "Zestimate: $450,000" or "$450,000 Zestimate"
+            const zestimateMatch = allText.match(/(?:Zestimate[®:]?\s*\$?([\d,]+)|\$?([\d,]+)\s*Zestimate)/i);
+            if (zestimateMatch) {
+                estimate = parseInt((zestimateMatch[1] || zestimateMatch[2]).replace(/,/g, ''));
+                extractionMethod = 'visible_text';
+            }
+
+            // Method 2: Parse __NEXT_DATA__ script tag (most reliable)
+            if (estimate === 0) {
+                const nextDataScript = document.getElementById('__NEXT_DATA__');
+                if (nextDataScript) {
+                    try {
+                        const nextData = JSON.parse(nextDataScript.textContent || '{}');
+                        const gdpData = nextData?.props?.pageProps?.componentProps?.gdpClientCache;
+                        if (gdpData) {
+                            const cacheData = typeof gdpData === 'string' ? JSON.parse(gdpData) : gdpData;
+                            const entries = Object.values(cacheData) as Array<{
+                                property?: {
+                                    zestimate?: number; zestimateLowPercent?: number; zestimateHighPercent?: number;
+                                    livingArea?: number; bedrooms?: number; bathrooms?: number; yearBuilt?: number; lotSize?: number;
+                                    address?: { streetAddress?: string };
+                                    streetAddress?: string;
+                                }
+                            }>;
+                            for (const entry of entries) {
+                                if (entry?.property?.zestimate) {
+                                    estimate = entry.property.zestimate;
+                                    const lowPct = entry.property.zestimateLowPercent || 7;
+                                    const highPct = entry.property.zestimateHighPercent || 7;
+                                    low = Math.round(estimate * (1 - lowPct / 100));
+                                    high = Math.round(estimate * (1 + highPct / 100));
+                                    sqft = entry.property.livingArea || 0;
+                                    beds = entry.property.bedrooms || 0;
+                                    baths = entry.property.bathrooms || 0;
+                                    yearBuilt = entry.property.yearBuilt || 0;
+                                    lotSize = entry.property.lotSize || 0;
+                                    scrapedAddress = entry.property.address?.streetAddress || entry.property.streetAddress || '';
+                                    extractionMethod = '__NEXT_DATA__';
+                                    break;
+                                }
+                            }
+                        }
+                    } catch (e) { /* continue */ }
+                }
+            }
+
+            // Method 3: Look for price in DOM elements
+            if (estimate === 0) {
+                const priceElements = document.querySelectorAll('[data-testid="price"], .ds-price, .home-value');
+                for (const el of priceElements) {
+                    const text = el.textContent || '';
+                    const match = text.match(/\$?([\d,]+)/);
+                    if (match && parseInt(match[1].replace(/,/g, '')) > 50000) {
+                        estimate = parseInt(match[1].replace(/,/g, ''));
+                        extractionMethod = 'dom_element';
+                        break;
+                    }
+                }
+            }
+
+            // Method 4: Regex fallback on full HTML
+            if (estimate === 0) {
+                const html = document.body.innerHTML;
+                const patterns = [/"zestimate":(\d+)/, /"price":(\d+)/];
+                for (const pattern of patterns) {
+                    const match = html.match(pattern);
+                    if (match) {
+                        estimate = parseInt(match[1]);
+                        extractionMethod = 'html_regex';
+                        break;
+                    }
+                }
+            }
+
+            // Get property details from visible stats
+            const statsText = document.body.innerText;
+            if (!beds) {
+                const bedsMatch = statsText.match(/(\d+)\s*(?:beds?|bd)/i);
+                beds = bedsMatch ? parseInt(bedsMatch[1]) : 0;
+            }
+            if (!baths) {
+                const bathsMatch = statsText.match(/([\d.]+)\s*(?:baths?|ba)/i);
+                baths = bathsMatch ? parseFloat(bathsMatch[1]) : 0;
+            }
+            if (!sqft) {
+                const sqftMatch = statsText.match(/([\d,]+)\s*(?:sq\.?\s*ft|sqft)/i);
+                sqft = sqftMatch ? parseInt(sqftMatch[1].replace(/,/g, '')) : 0;
+            }
+
+            // Get address from page
+            if (!scrapedAddress) {
+                const addrEl = document.querySelector('[data-testid="bdp-address"], .ds-address-container h1, .home-address');
+                scrapedAddress = addrEl?.textContent?.trim() || '';
+            }
+
+            return { estimate, low, high, sqft, beds, baths, yearBuilt, lotSize, scrapedAddress, extractionMethod };
+        });
+
+        log.log('DATA', 'Extraction complete', {
+            estimate: data.estimate,
+            method: data.extractionMethod,
+            scrapedAddress: data.scrapedAddress
+        });
+
+        log.log('CLOSE', 'Closing browser');
+        await browser.close();
+
+        if (data.estimate > 0) {
+            const result = {
+                estimate: data.estimate,
+                low: data.low || Math.round(data.estimate * 0.93),
+                high: data.high || Math.round(data.estimate * 1.07),
+                url: zillowLink,
+                propertyData: {
+                    sqft: data.sqft,
+                    beds: data.beds,
+                    baths: data.baths,
+                    yearBuilt: data.yearBuilt,
+                    lotSize: data.lotSize,
+                },
+            };
+            log.finish(true, result);
+            return result;
+        }
+
+        log.finish(false);
+        return { url: zillowLink };
+    } catch (error) {
+        log.error('EXCEPTION', error);
+        if (browser) await browser.close();
+        return null;
+    }
+}
+
+// ============================================
 // ZILLOW SCRAPER - Uses __NEXT_DATA__ JSON extraction
 // ============================================
 async function scrapeZillow(address: string): Promise<{
@@ -2967,7 +3183,7 @@ export async function POST(request: NextRequest) {
         const sources = [
             // { name: 'RentCast', fn: fetchRentCast, accuracy: { low: 0.97, high: 1.03 } }, // DISABLED - hit API limit
             { name: 'NARRPR', fn: scrapeNARRPR, accuracy: { low: 0.98, high: 1.02 } },
-            { name: 'Zillow', fn: scrapeZillow, accuracy: { low: 0.93, high: 1.07 } },
+            { name: 'Zillow', fn: scrapeZillowViaGoogle, accuracy: { low: 0.93, high: 1.07 } }, // Via Google to bypass bot detection
             { name: 'Redfin', fn: scrapeRedfin, accuracy: { low: 0.95, high: 1.05 } },
             { name: 'Realtor.com', fn: scrapeRealtor, accuracy: { low: 0.94, high: 1.06 } },
             { name: 'Trulia', fn: scrapeTrulia, accuracy: { low: 0.93, high: 1.07 } },
