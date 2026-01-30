@@ -3328,6 +3328,298 @@ async function scrapeXome(address: string): Promise<{
 }
 
 // ============================================
+// OWNERLY HOME VALUE ESTIMATOR
+// ============================================
+async function scrapeOwnerly(address: string): Promise<{
+    estimate?: number;
+    low?: number;
+    high?: number;
+    url: string;
+    propertyData?: Partial<PropertyData>;
+} | null> {
+    const log = new ScraperLogger('Ownerly');
+    let browser: Browser | null = null;
+    try {
+        log.log('BROWSER', 'Creating stealth browser');
+        browser = await createStealthBrowser();
+        const page = await browser.newPage();
+        log.log('CONFIG', 'Configuring page');
+        await configurePage(page);
+
+        // Ownerly uses direct URL pattern
+        const addressSlug = address
+            .toLowerCase()
+            .replace(/[,#.]/g, '')
+            .replace(/\s+/g, '-');
+        const propertyUrl = `https://www.ownerly.com/property/${addressSlug}`;
+        log.log('NAVIGATE', `Going to: ${propertyUrl}`);
+
+        const response = await page.goto(propertyUrl, { waitUntil: 'networkidle2', timeout: 25000 });
+        log.log('RESPONSE', `HTTP ${response?.status() || 0}`);
+
+        await new Promise(r => setTimeout(r, 2000));
+        const pageTitle = await page.title();
+        log.log('PAGE_TITLE', pageTitle);
+
+        if (response?.status() === 404 || pageTitle.toLowerCase().includes('not found')) {
+            log.log('NOT_FOUND', 'Property not found');
+            await browser.close();
+            log.finish(false);
+            return { url: propertyUrl };
+        }
+
+        const data = await page.evaluate(() => {
+            const html = document.body.innerHTML;
+            const text = document.body.innerText;
+            let estimate = 0;
+
+            // Look for estimate in visible text or JSON
+            const pricePatterns = [
+                /"estimatedValue"\s*:\s*(\d+)/i,
+                /"homeValue"\s*:\s*(\d+)/i,
+                /Estimated\s*Value[:\s]*\$([0-9,]+)/i,
+                /Home\s*Value[:\s]*\$([0-9,]+)/i,
+                /\$([0-9,]+)/,
+            ];
+            for (const pattern of pricePatterns) {
+                const match = (html + text).match(pattern);
+                if (match) {
+                    const val = parseInt(match[1].replace(/,/g, ''));
+                    if (val > 100000 && val < 10000000) {
+                        estimate = val;
+                        break;
+                    }
+                }
+            }
+
+            const sqftMatch = text.match(/([\d,]+)\s*(?:sq\.?\s*ft|sqft)/i);
+            const bedsMatch = text.match(/(\d+)\s*bed/i);
+            const bathsMatch = text.match(/([\d.]+)\s*bath/i);
+            const yearMatch = text.match(/built\s*(?:in\s*)?(\d{4})/i) || text.match(/year\s*built[:\s]*(\d{4})/i);
+
+            return {
+                estimate,
+                sqft: sqftMatch ? parseInt(sqftMatch[1].replace(/,/g, '')) : 0,
+                beds: bedsMatch ? parseInt(bedsMatch[1]) : 0,
+                baths: bathsMatch ? parseFloat(bathsMatch[1]) : 0,
+                yearBuilt: yearMatch ? parseInt(yearMatch[1]) : 0,
+            };
+        });
+
+        log.log('DATA', 'Extraction complete', { estimate: data.estimate });
+        await browser.close();
+
+        if (data.estimate > 0) {
+            const result = {
+                estimate: data.estimate,
+                low: Math.round(data.estimate * 0.93),
+                high: Math.round(data.estimate * 1.07),
+                url: propertyUrl,
+                propertyData: { sqft: data.sqft, beds: data.beds, baths: data.baths, yearBuilt: data.yearBuilt, lotSize: 0 },
+            };
+            log.finish(true, result);
+            return result;
+        }
+
+        log.finish(false);
+        return { url: propertyUrl };
+    } catch (error) {
+        log.error('EXCEPTION', error);
+        if (browser) await browser.close();
+        return null;
+    }
+}
+
+// ============================================
+// HOMESNAP HOME VALUE ESTIMATOR
+// ============================================
+async function scrapeHomesnap(address: string): Promise<{
+    estimate?: number;
+    low?: number;
+    high?: number;
+    url: string;
+    propertyData?: Partial<PropertyData>;
+} | null> {
+    const log = new ScraperLogger('Homesnap');
+    let browser: Browser | null = null;
+    try {
+        log.log('BROWSER', 'Creating stealth browser');
+        browser = await createStealthBrowser();
+        const page = await browser.newPage();
+        log.log('CONFIG', 'Configuring page');
+        await configurePage(page);
+
+        // Homesnap uses search URL
+        const searchQuery = encodeURIComponent(address);
+        const searchUrl = `https://www.homesnap.com/search?q=${searchQuery}`;
+        log.log('NAVIGATE', `Going to: ${searchUrl}`);
+
+        const response = await page.goto(searchUrl, { waitUntil: 'networkidle2', timeout: 25000 });
+        log.log('RESPONSE', `HTTP ${response?.status() || 0}`);
+
+        await new Promise(r => setTimeout(r, 3000));
+
+        const data = await page.evaluate(() => {
+            const html = document.body.innerHTML;
+            const text = document.body.innerText;
+            let estimate = 0;
+
+            // Look for price/value patterns
+            const pricePatterns = [
+                /"price"\s*:\s*"?\$?(\d+)"?/i,
+                /"listPrice"\s*:\s*(\d+)/i,
+                /"estimatedValue"\s*:\s*(\d+)/i,
+                /\$([0-9,]+)\s*(?:Est\.|Estimated)/i,
+                /Value[:\s]*\$([0-9,]+)/i,
+            ];
+            for (const pattern of pricePatterns) {
+                const match = (html + text).match(pattern);
+                if (match) {
+                    const val = parseInt(match[1].replace(/,/g, ''));
+                    if (val > 100000 && val < 10000000) {
+                        estimate = val;
+                        break;
+                    }
+                }
+            }
+
+            const sqftMatch = text.match(/([\d,]+)\s*(?:sq\.?\s*ft|sqft)/i);
+            const bedsMatch = text.match(/(\d+)\s*bed/i);
+            const bathsMatch = text.match(/([\d.]+)\s*bath/i);
+
+            return {
+                estimate,
+                sqft: sqftMatch ? parseInt(sqftMatch[1].replace(/,/g, '')) : 0,
+                beds: bedsMatch ? parseInt(bedsMatch[1]) : 0,
+                baths: bathsMatch ? parseFloat(bathsMatch[1]) : 0,
+            };
+        });
+
+        log.log('DATA', 'Extraction complete', { estimate: data.estimate });
+        const finalUrl = page.url();
+        await browser.close();
+
+        if (data.estimate > 0) {
+            const result = {
+                estimate: data.estimate,
+                low: Math.round(data.estimate * 0.94),
+                high: Math.round(data.estimate * 1.06),
+                url: finalUrl,
+                propertyData: { sqft: data.sqft, beds: data.beds, baths: data.baths, yearBuilt: 0, lotSize: 0 },
+            };
+            log.finish(true, result);
+            return result;
+        }
+
+        log.finish(false);
+        return { url: finalUrl };
+    } catch (error) {
+        log.error('EXCEPTION', error);
+        if (browser) await browser.close();
+        return null;
+    }
+}
+
+// ============================================
+// OPENDOOR HOME VALUE ESTIMATOR (iBuyer)
+// ============================================
+async function scrapeOpendoor(address: string): Promise<{
+    estimate?: number;
+    low?: number;
+    high?: number;
+    url: string;
+    propertyData?: Partial<PropertyData>;
+} | null> {
+    const log = new ScraperLogger('Opendoor');
+    let browser: Browser | null = null;
+    try {
+        log.log('BROWSER', 'Creating stealth browser');
+        browser = await createStealthBrowser();
+        const page = await browser.newPage();
+        log.log('CONFIG', 'Configuring page');
+        await configurePage(page);
+
+        // Opendoor has a home value estimator
+        const searchUrl = `https://www.opendoor.com/homes`;
+        log.log('NAVIGATE', `Going to: ${searchUrl}`);
+
+        const response = await page.goto(searchUrl, { waitUntil: 'networkidle2', timeout: 25000 });
+        log.log('RESPONSE', `HTTP ${response?.status() || 0}`);
+
+        await new Promise(r => setTimeout(r, 2000));
+
+        // Look for search input
+        const searchInput = await page.$('input[type="text"], input[placeholder*="address"], input[name="search"]');
+        if (searchInput) {
+            log.log('TYPE', 'Typing address');
+            await searchInput.type(address, { delay: 30 });
+            await new Promise(r => setTimeout(r, 2000));
+            await page.keyboard.press('Enter');
+            await new Promise(r => setTimeout(r, 3000));
+        }
+
+        const data = await page.evaluate(() => {
+            const html = document.body.innerHTML;
+            const text = document.body.innerText;
+            let estimate = 0;
+
+            // Look for Opendoor offer/estimate patterns
+            const pricePatterns = [
+                /"offerPrice"\s*:\s*(\d+)/i,
+                /"estimatedValue"\s*:\s*(\d+)/i,
+                /Preliminary\s*Offer[:\s]*\$([0-9,]+)/i,
+                /Estimated\s*Value[:\s]*\$([0-9,]+)/i,
+                /\$([0-9,]+)/,
+            ];
+            for (const pattern of pricePatterns) {
+                const match = (html + text).match(pattern);
+                if (match) {
+                    const val = parseInt(match[1].replace(/,/g, ''));
+                    if (val > 100000 && val < 10000000) {
+                        estimate = val;
+                        break;
+                    }
+                }
+            }
+
+            const sqftMatch = text.match(/([\d,]+)\s*(?:sq\.?\s*ft|sqft)/i);
+            const bedsMatch = text.match(/(\d+)\s*bed/i);
+            const bathsMatch = text.match(/([\d.]+)\s*bath/i);
+
+            return {
+                estimate,
+                sqft: sqftMatch ? parseInt(sqftMatch[1].replace(/,/g, '')) : 0,
+                beds: bedsMatch ? parseInt(bedsMatch[1]) : 0,
+                baths: bathsMatch ? parseFloat(bathsMatch[1]) : 0,
+            };
+        });
+
+        log.log('DATA', 'Extraction complete', { estimate: data.estimate });
+        const finalUrl = page.url();
+        await browser.close();
+
+        if (data.estimate > 0) {
+            const result = {
+                estimate: data.estimate,
+                low: Math.round(data.estimate * 0.95),
+                high: Math.round(data.estimate * 1.05),
+                url: finalUrl,
+                propertyData: { sqft: data.sqft, beds: data.beds, baths: data.baths, yearBuilt: 0, lotSize: 0 },
+            };
+            log.finish(true, result);
+            return result;
+        }
+
+        log.finish(false);
+        return { url: finalUrl };
+    } catch (error) {
+        log.error('EXCEPTION', error);
+        if (browser) await browser.close();
+        return null;
+    }
+}
+
+// ============================================
 // AGGREGATE PROPERTY DATA
 // ============================================
 function aggregatePropertyData(results: Array<{ propertyData?: Partial<PropertyData> } | null>): PropertyData {
@@ -3386,6 +3678,10 @@ export async function POST(request: NextRequest) {
             { name: 'ComeHome', fn: scrapeComeHome, accuracy: { low: 0.94, high: 1.06 } },
             { name: 'Bank of America', fn: scrapeBankOfAmerica, accuracy: { low: 0.95, high: 1.05 } },
             { name: 'Xome', fn: scrapeXome, accuracy: { low: 0.90, high: 1.10 } },
+            // DISABLED - Bot protection:
+            // { name: 'Ownerly', fn: scrapeOwnerly, accuracy: { low: 0.93, high: 1.07 } }, // 404 - Wrong URL pattern
+            // { name: 'Homesnap', fn: scrapeHomesnap, accuracy: { low: 0.94, high: 1.06 } }, // 403 - BLOCKED
+            // { name: 'Opendoor', fn: scrapeOpendoor, accuracy: { low: 0.95, high: 1.05 } }, // Needs interaction
         ];
 
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
