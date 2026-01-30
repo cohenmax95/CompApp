@@ -2827,8 +2827,10 @@ async function scrapeTrulia(address: string): Promise<{
         log.log('CONFIG', 'Configuring page');
         await configurePage(page);
 
-        const slug = address.replace(/[,\s]+/g, '-').replace(/--+/g, '-');
-        const searchUrl = `https://www.trulia.com/home-values/${encodeURIComponent(slug)}/`;
+        // Trulia uses property details URL pattern like /p/ca/los-angeles-{address-slug}-{zpid}
+        // We'll search instead since we don't have the zpid
+        const searchQuery = encodeURIComponent(address);
+        const searchUrl = `https://www.trulia.com/for_sale/${searchQuery.replace(/%20/g, '-')}/`;
         log.log('NAVIGATE', `Going to: ${searchUrl}`);
 
         const response = await page.goto(searchUrl, { waitUntil: 'networkidle2', timeout: 25000 });
@@ -2839,16 +2841,48 @@ async function scrapeTrulia(address: string): Promise<{
 
         const data = await page.evaluate(() => {
             const html = document.body.innerHTML;
+            const text = document.body.innerText;
 
-            const estimateMatch = html.match(/"estimatedValue":(\d+)/) || html.match(/"zestimate":(\d+)/);
-            const sqftMatch = html.match(/"floorSpace":\{"value":(\d+)/) || html.match(/"livingArea":(\d+)/);
-            const bedsMatch = html.match(/"bedrooms":(\d+)/);
-            const bathsMatch = html.match(/"bathrooms":(\d+)/);
+            // Look for estimate patterns in HTML and visible text
+            let estimate = 0;
+
+            // Method 1: JSON data patterns (Trulia uses similar patterns to Zillow)
+            const jsonPatterns = [
+                /"estimatedValue"\s*:\s*(\d+)/,
+                /"zestimate"\s*:\s*(\d+)/,
+                /"price"\s*:\s*"?\$?([\d,]+)"?/,
+                /"homeValue"\s*:\s*(\d+)/,
+            ];
+            for (const pattern of jsonPatterns) {
+                const match = html.match(pattern);
+                if (match) {
+                    const val = parseInt(match[1].replace(/,/g, ''));
+                    if (val > 100000 && val < 10000000) {
+                        estimate = val;
+                        break;
+                    }
+                }
+            }
+
+            // Method 2: Look for price in visible text
+            if (estimate === 0) {
+                const priceMatch = text.match(/\$([0-9,]+)/);
+                if (priceMatch) {
+                    const val = parseInt(priceMatch[1].replace(/,/g, ''));
+                    if (val > 100000 && val < 10000000) {
+                        estimate = val;
+                    }
+                }
+            }
+
+            const sqftMatch = html.match(/"floorSpace":\{"value":(\d+)/) || html.match(/"livingArea":(\d+)/) || text.match(/([\d,]+)\s*sqft/i);
+            const bedsMatch = html.match(/"bedrooms":(\d+)/) || text.match(/(\d+)\s*bed/i);
+            const bathsMatch = html.match(/"bathrooms":(\d+)/) || text.match(/([\d.]+)\s*bath/i);
             const addrMatch = html.match(/"streetAddress"\s*:\s*"([^"]+)"/) || html.match(/"street"\s*:\s*"([^"]+)"/);
 
             return {
-                estimate: estimateMatch ? parseInt(estimateMatch[1]) : 0,
-                sqft: sqftMatch ? parseInt(sqftMatch[1]) : 0,
+                estimate,
+                sqft: sqftMatch ? parseInt(sqftMatch[1].toString().replace(/,/g, '')) : 0,
                 beds: bedsMatch ? parseInt(bedsMatch[1]) : 0,
                 baths: bathsMatch ? parseInt(bathsMatch[1]) : 0,
                 scrapedAddress: addrMatch ? addrMatch[1] : '',
@@ -2904,56 +2938,79 @@ async function scrapeComeHome(address: string): Promise<{
         log.log('CONFIG', 'Configuring page');
         await configurePage(page);
 
-        const searchUrl = `https://www.comehome.com/`;
-        log.log('NAVIGATE', `Going to: ${searchUrl}`);
-        const response = await page.goto(searchUrl, { waitUntil: 'networkidle2', timeout: 25000 });
+        // Convert address to slug format: "779 Hibiscus Dr, Royal Palm Beach, FL 33411" -> "779-Hibiscus-Dr-Royal-Palm-Beach-FL-33411"
+        const addressSlug = address
+            .replace(/[,#.]/g, '')
+            .replace(/\s+/g, '-');
+
+        const propertyUrl = `https://www.comehome.com/property-details/${addressSlug}`;
+        log.log('NAVIGATE', `Going to: ${propertyUrl}`);
+
+        const response = await page.goto(propertyUrl, { waitUntil: 'networkidle2', timeout: 25000 });
         log.log('RESPONSE', `HTTP ${response?.status() || 0}`);
 
-        log.log('SEARCH', 'Looking for search input');
-        const searchInput = await page.$('input[type="text"], input[placeholder*="address"], input[name="search"]');
-        if (searchInput) {
-            log.log('TYPE', 'Typing address');
-            await searchInput.type(address, { delay: 30 });
-            await new Promise(r => setTimeout(r, 1500));
-            log.log('SUBMIT', 'Pressing Enter');
-            await page.keyboard.press('Enter');
-            await new Promise(r => setTimeout(r, 3000));
-        } else {
-            log.log('NO_INPUT', 'Search input not found');
+        await new Promise(r => setTimeout(r, 2000));
+
+        const pageTitle = await page.title();
+        log.log('PAGE_TITLE', pageTitle);
+
+        // Check if we got a 404 or not found page
+        if (pageTitle.toLowerCase().includes('not found') || response?.status() === 404) {
+            log.log('NOT_FOUND', 'Property page not found');
+            await browser.close();
+            log.finish(false);
+            return { url: propertyUrl };
         }
 
-        // Wait for results and extract data
+        // Extract data from the property page
         const data = await page.evaluate(() => {
             const html = document.body.innerHTML;
+            const text = document.body.innerText;
             let estimate = 0;
             let low = 0;
             let high = 0;
 
-            // ComeHome displays the estimate prominently - look for price patterns
-            const pricePatterns = [
-                /"housevalue"\s*:\s*(\d+)/i,
+            // Method 1: Look for estimate in visible text (e.g., "$403,576")
+            const visiblePriceMatch = text.match(/\$([0-9,]+)(?:\s*(?:estimated|home value|market value))?/i);
+            if (visiblePriceMatch) {
+                const value = parseInt(visiblePriceMatch[1].replace(/,/g, ''));
+                if (value > 100000 && value < 10000000) {
+                    estimate = value;
+                }
+            }
+
+            // Method 2: Look for JSON data patterns
+            const jsonPatterns = [
                 /"estimatedValue"\s*:\s*(\d+)/i,
+                /"housevalue"\s*:\s*(\d+)/i,
                 /"value"\s*:\s*(\d+)/,
-                /\$([0-9,]+).*(?:estimated|home value|market value)/i,
+                /"homeValue"\s*:\s*(\d+)/i,
+                /"zestimate"\s*:\s*(\d+)/i,
             ];
 
-            for (const pattern of pricePatterns) {
-                const match = html.match(pattern);
-                if (match) {
-                    estimate = parseInt(match[1].replace(/,/g, ''));
-                    if (estimate > 50000 && estimate < 50000000) {
-                        low = Math.round(estimate * 0.94);
-                        high = Math.round(estimate * 1.06);
-                        break;
+            if (estimate === 0) {
+                for (const pattern of jsonPatterns) {
+                    const match = html.match(pattern);
+                    if (match) {
+                        const value = parseInt(match[1]);
+                        if (value > 100000 && value < 10000000) {
+                            estimate = value;
+                            break;
+                        }
                     }
                 }
             }
 
+            if (estimate > 0) {
+                low = Math.round(estimate * 0.94);
+                high = Math.round(estimate * 1.06);
+            }
+
             // Property details
-            const sqftMatch = html.match(/"squareFeet"\s*:\s*(\d+)/) || html.match(/"sqft"\s*:\s*(\d+)/);
-            const bedsMatch = html.match(/"bedrooms"\s*:\s*(\d+)/) || html.match(/"beds"\s*:\s*(\d+)/);
-            const bathsMatch = html.match(/"bathrooms"\s*:\s*([\d.]+)/) || html.match(/"baths"\s*:\s*([\d.]+)/);
-            const yearMatch = html.match(/"yearBuilt"\s*:\s*(\d+)/);
+            const sqftMatch = html.match(/"squareFeet"\s*:\s*(\d+)/) || html.match(/"sqft"\s*:\s*(\d+)/) || text.match(/(\d{3,5})\s*(?:sq\.?\s*ft|sqft)/i);
+            const bedsMatch = html.match(/"bedrooms"\s*:\s*(\d+)/) || html.match(/"beds"\s*:\s*(\d+)/) || text.match(/(\d+)\s*bed/i);
+            const bathsMatch = html.match(/"bathrooms"\s*:\s*([\d.]+)/) || html.match(/"baths"\s*:\s*([\d.]+)/) || text.match(/([\d.]+)\s*bath/i);
+            const yearMatch = html.match(/"yearBuilt"\s*:\s*(\d+)/) || text.match(/built\s*(?:in\s*)?(\d{4})/i);
 
             return {
                 estimate,
@@ -2975,7 +3032,7 @@ async function scrapeComeHome(address: string): Promise<{
                 estimate: data.estimate,
                 low: data.low || Math.round(data.estimate * 0.94),
                 high: data.high || Math.round(data.estimate * 1.06),
-                url: searchUrl,
+                url: propertyUrl,
                 propertyData: { sqft: data.sqft, beds: data.beds, baths: data.baths, yearBuilt: data.yearBuilt, lotSize: 0 },
             };
             log.finish(true, result);
@@ -2983,7 +3040,7 @@ async function scrapeComeHome(address: string): Promise<{
         }
 
         log.finish(false);
-        return { url: searchUrl };
+        return { url: propertyUrl };
     } catch (error) {
         log.error('EXCEPTION', error);
         if (browser) await browser.close();
@@ -3018,25 +3075,32 @@ async function scrapeBankOfAmerica(address: string): Promise<{
         log.log('PAGE_INFO', `Title: ${await page.title()}`);
         await new Promise(r => setTimeout(r, 2000));
 
-        log.log('SEARCH', 'Looking for address input');
-        const addressInput = await page.$('input[type="text"], input[placeholder*="address"], input[name*="address"], #address, .address-search input');
+        log.log('SEARCH', 'Looking for address input with id="address"');
+        // Prioritize the specific #address selector
+        let addressInput = await page.$('#address');
+        if (!addressInput) {
+            addressInput = await page.$('input[placeholder*="address"], input[name*="address"], input[type="text"]');
+        }
+
         if (addressInput) {
             log.log('TYPE', 'Typing address');
             await addressInput.click();
-            await addressInput.type(address, { delay: 50 });
-            await new Promise(r => setTimeout(r, 2000));
+            await new Promise(r => setTimeout(r, 500));
+            await addressInput.type(address, { delay: 30 });
+            await new Promise(r => setTimeout(r, 2500)); // Wait for Google Places autocomplete
 
-            log.log('AUTOCOMPLETE', 'Looking for suggestions');
-            const suggestion = await page.$('.pac-item, .autocomplete-suggestion, [role="option"]');
+            log.log('AUTOCOMPLETE', 'Looking for Google Places suggestions');
+            // Google Places Autocomplete uses .pac-item for suggestions
+            const suggestion = await page.$('.pac-item, .pac-container .pac-item:first-child');
             if (suggestion) {
                 log.log('SELECT', 'Clicking suggestion');
                 await suggestion.click();
-                await new Promise(r => setTimeout(r, 1500));
+                await new Promise(r => setTimeout(r, 3000)); // Wait for result page to load
             } else {
-                log.log('SUBMIT', 'No suggestions, pressing Enter');
+                log.log('SUBMIT', 'No suggestions visible, pressing Enter');
                 await page.keyboard.press('Enter');
+                await new Promise(r => setTimeout(r, 3000));
             }
-            await new Promise(r => setTimeout(r, 3000));
         } else {
             log.log('NO_INPUT', 'Address input not found');
         }
@@ -3048,41 +3112,54 @@ async function scrapeBankOfAmerica(address: string): Promise<{
             let estimate = 0;
             let sqft = 0, beds = 0, baths = 0, yearBuilt = 0;
 
-            // Method 1: Use confirmed CSS selector from browser investigation
-            const estimateEl = document.querySelector('.hvt-property__estimate-value');
-            if (estimateEl) {
-                const text = estimateEl.textContent || '';
-                const match = text.replace(/[$,]/g, '').match(/(\d+)/);
-                if (match) estimate = parseInt(match[1]);
+            // Method 1: Look for estimate in visible text first
+            const text = document.body.innerText;
+            const visibleEstimateMatch = text.match(/Estimated\s*home\s*value[\s\n]*\$([0-9,]+)/i) ||
+                text.match(/\$([0-9,]+)\*?[\s\n]*This is our estimate/i);
+            if (visibleEstimateMatch) {
+                estimate = parseInt(visibleEstimateMatch[1].replace(/,/g, ''));
             }
 
-            // Method 2: Fallback to regex patterns in HTML
+            // Method 2: Use confirmed CSS selector from browser investigation
+            if (estimate === 0) {
+                const estimateEl = document.querySelector('.hvt-property__estimate-value');
+                if (estimateEl) {
+                    const elText = estimateEl.textContent || '';
+                    const match = elText.replace(/[$,*]/g, '').match(/(\d+)/);
+                    if (match) estimate = parseInt(match[1]);
+                }
+            }
+
+            // Method 3: Fallback to regex patterns in HTML
             if (estimate === 0) {
                 const html = document.body.innerHTML;
                 const patterns = [
-                    /\"estimatedValue\":\s*(\d+)/,
-                    /\"homeValue\":\s*(\d+)/,
-                    /Estimated.*?home.*?value[^$]*\$([0-9,]+)/i,
-                    /\$([0-9,]+)\s*<\/span>/,
+                    /"estimatedValue"\s*:\s*(\d+)/,
+                    /"homeValue"\s*:\s*(\d+)/,
+                    /\$([0-9,]+)\*?\s*<\/(?:span|div|h\d)/,
                 ];
                 for (const pattern of patterns) {
                     const match = html.match(pattern);
                     if (match) {
-                        estimate = parseInt(match[1].replace(/,/g, ''));
-                        if (estimate > 50000 && estimate < 50000000) break;
+                        const val = parseInt(match[1].replace(/,/g, ''));
+                        if (val > 50000 && val < 50000000) {
+                            estimate = val;
+                            break;
+                        }
                     }
                 }
-
-                // Extract property details
-                const sqftMatch = html.match(/\"sqft\":\s*(\d+)/) || html.match(/(\d+)\s*sq\s*ft/i);
-                const bedsMatch = html.match(/\"beds\":\s*(\d+)/) || html.match(/(\d+)\s*bed/i);
-                const bathsMatch = html.match(/\"baths\":\s*([\d.]+)/) || html.match(/([\d.]+)\s*bath/i);
-                const yearMatch = html.match(/\"yearBuilt\":\s*(\d+)/) || html.match(/built\s*(?:in\s*)?(\d{4})/i);
-                sqft = sqftMatch ? parseInt(sqftMatch[1]) : 0;
-                beds = bedsMatch ? parseInt(bedsMatch[1]) : 0;
-                baths = bathsMatch ? parseFloat(bathsMatch[1]) : 0;
-                yearBuilt = yearMatch ? parseInt(yearMatch[1]) : 0;
             }
+
+            // Extract property details from visible text
+            const bedsMatch = text.match(/(\d+)\s*Bedrooms/i) || text.match(/(\d+)\s*Beds/i);
+            const bathsMatch = text.match(/(\d+)\s*Bathrooms/i) || text.match(/([\d.]+)\s*Baths/i);
+            const sqftMatch = text.match(/([\d,]+)\s*Sq\.?\s*Ft\.?/i);
+            const yearMatch = text.match(/Year\s*Built\s*(\d{4})/i) || text.match(/Built\s*(\d{4})/i);
+
+            sqft = sqftMatch ? parseInt(sqftMatch[1].replace(/,/g, '')) : 0;
+            beds = bedsMatch ? parseInt(bedsMatch[1]) : 0;
+            baths = bathsMatch ? parseFloat(bathsMatch[1]) : 0;
+            yearBuilt = yearMatch ? parseInt(yearMatch[1]) : 0;
 
             return { estimate, sqft, beds, baths, yearBuilt };
         });
