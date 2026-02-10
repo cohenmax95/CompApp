@@ -850,7 +850,7 @@ const AVMPanel = forwardRef<AVMPanelRef, AVMPanelProps>(({ address, onAddressCha
                     </div>
                     <div className="rounded-xl overflow-hidden border border-slate-700/50 bg-slate-800/50">
                         <img
-                            src={`https://maps.googleapis.com/maps/api/streetview?size=600x300&location=${encodeURIComponent(address)}&key=AIzaSyBFw0Qbyq9zTFTd-tUY6dQQyYQ1ECZF7Pg`}
+                            src={`https://maps.googleapis.com/maps/api/streetview?size=600x300&location=${encodeURIComponent(address)}&key=${process.env.NEXT_PUBLIC_GOOGLE_API_KEY || 'AIzaSyBFw0Qbyq9zTFTd-tUY6dQQyYQ1ECZF7Pg'}`}
                             alt={`Street view of ${address}`}
                             className="w-full h-[200px] object-cover"
                             onError={(e) => {

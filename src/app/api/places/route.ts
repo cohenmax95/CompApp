@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 
 // Google Maps API Key
-const GOOGLE_API_KEY = 'AIzaSyAkxeGZUHnkU9PrAt-4wPtntT8yM1gLJVE';
+const GOOGLE_API_KEY = process.env.GOOGLE_API_KEY || 'AIzaSyAkxeGZUHnkU9PrAt-4wPtntT8yM1gLJVE';
 
 export async function GET(request: NextRequest) {
     const searchParams = request.nextUrl.searchParams;

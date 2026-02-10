@@ -2,7 +2,7 @@ import { NextRequest } from 'next/server';
 import { parseAddress, PropertyData } from '@/lib/avm';
 
 // RentCast API key for property valuations
-const RENTCAST_API_KEY = '647e5f595c784cdba15fc418d95d3541';
+const RENTCAST_API_KEY = process.env.RENTCAST_API_KEY || '647e5f595c784cdba15fc418d95d3541';
 
 interface SourceStatus {
     source: string;

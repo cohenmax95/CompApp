@@ -8,10 +8,10 @@ import path from 'path';
 // Using enhanced manual evasion techniques instead
 
 // 2Captcha API key for CAPTCHA solving
-const CAPTCHA_API_KEY = '4f79e12ed663c4cd4a26dc0186744710';
+const CAPTCHA_API_KEY = process.env.CAPTCHA_API_KEY || '4f79e12ed663c4cd4a26dc0186744710';
 
 // RentCast API key for property valuations
-const RENTCAST_API_KEY = '647e5f595c784cdba15fc418d95d3541';
+const RENTCAST_API_KEY = process.env.RENTCAST_API_KEY || '647e5f595c784cdba15fc418d95d3541';
 
 // NARRPR (Realtors Property Resource) credentials
 const NARRPR_EMAIL = process.env.NARRPR_EMAIL || 'cohen.max.95@gmail.com';

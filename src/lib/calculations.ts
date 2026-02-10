@@ -146,8 +146,8 @@ export function calculateOffers(
     const maxWholesalePrice = arv * 0.85 - repairEstimate;
     const maxWholesaleProfit = arv - maxWholesalePrice - repairEstimate;
 
-    // Wholesale closing: 30 business days
-    const wholesaleClosingDays = 45;
+    // Wholesale closing: 30 business days (~42 calendar days)
+    const wholesaleClosingDays = 42;
     const wholesaleClosingDate = addBusinessDays(today, 30);
 
     // ===========================================

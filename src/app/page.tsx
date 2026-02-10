@@ -9,11 +9,12 @@ import {
     calculateOffers,
     formatCurrency
 } from '@/lib/calculations';
+import { detectCountyFromAddress } from '@/lib/fl-counties';
 import SettingsPanel from '@/components/SettingsPanel';
-import PropertyInput from '@/components/PropertyInput';
 import OfferResultsDisplay from '@/components/OfferResults';
 import AVMPanel, { AVMPanelRef } from '@/components/AVMPanel';
 import { ToastContainer, OfflineIndicator, ConfirmModal, showToast } from '@/components/Toast';
+import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
 
 interface AppState {
     settings: OfferSettings;
@@ -39,6 +40,8 @@ const DEFAULT_STATE: AppState = {
 export default function Home() {
     const [state, setState] = useState<AppState>(DEFAULT_STATE);
     const [isLoaded, setIsLoaded] = useState(false);
+    const [mode, setMode] = useState<'avm' | 'manual'>('avm');
+    const [avmCollapsed, setAvmCollapsed] = useState(false);
 
     // Load state from localStorage on mount
     useEffect(() => {
@@ -51,6 +54,10 @@ export default function Home() {
                     ...parsed,
                     settings: { ...DEFAULT_SETTINGS, ...parsed.settings },
                 });
+                // If we have an ARV already, start collapsed
+                if (parsed.inputs?.arv > 0) {
+                    setAvmCollapsed(true);
+                }
             }
         } catch (e) {
             console.error('Failed to load saved state:', e);
@@ -58,8 +65,7 @@ export default function Home() {
         setIsLoaded(true);
     }, []);
 
-    // Apply AVM estimates to inputs (including sqft from property data)
-    // Also resets repair estimate to avoid stale data from previous properties
+    // Apply AVM estimates to inputs
     const handleApplyAVMEstimate = (arv: number, asIsValue: number, sqftFromAVM?: number) => {
         setState((s) => ({
             ...s,
@@ -67,11 +73,11 @@ export default function Home() {
                 ...s.inputs,
                 arv,
                 asIsValue,
-                repairEstimate: 0, // Reset to prompt user to select new repair level
+                repairEstimate: 0,
             },
-            // Always update sqft from AVM data if provided
             sqft: sqftFromAVM || s.sqft,
         }));
+        setAvmCollapsed(true); // Auto-collapse after applying
     };
 
     // Save state to localStorage on change
@@ -90,7 +96,36 @@ export default function Home() {
         return calculateOffers(state.inputs, state.settings);
     }, [state.inputs, state.settings]);
 
-    const hasInputs = state.inputs.arv > 0 && state.inputs.asIsValue > 0;
+    const hasInputs = state.inputs.arv > 0;
+
+    // Auto-detect FL county from address
+    const detectedCounty = useMemo(() => {
+        return detectCountyFromAddress(state.address);
+    }, [state.address]);
+
+    // Auto-derive asIsValue when only ARV is set (manual mode)
+    useEffect(() => {
+        if (mode === 'manual' && state.inputs.arv > 0 && state.inputs.asIsValue === 0) {
+            setState((s) => ({
+                ...s,
+                inputs: {
+                    ...s.inputs,
+                    asIsValue: Math.round(s.inputs.arv * 0.90),
+                    listPrice: Math.round(s.inputs.arv * 0.90),
+                },
+            }));
+        }
+    }, [mode, state.inputs.arv, state.inputs.asIsValue]);
+
+    // Money formatting helper for manual input
+    const formatMoneyInput = (value: number) => {
+        if (value === 0) return '';
+        return value.toLocaleString('en-US');
+    };
+
+    const parseMoneyInput = (raw: string): number => {
+        return parseInt(raw.replace(/[^0-9]/g, '')) || 0;
+    };
 
     // Confirm reset modal
     const [showConfirmReset, setShowConfirmReset] = useState(false);
@@ -99,6 +134,8 @@ export default function Home() {
         setState(DEFAULT_STATE);
         localStorage.removeItem(STORAGE_KEY);
         setShowConfirmReset(false);
+        setAvmCollapsed(false);
+        setMode('avm');
         showToast('All data reset', 'info');
     };
 
@@ -122,16 +159,16 @@ export default function Home() {
 
     // Copy offer summary to clipboard
     const copyToClipboard = async () => {
-        const text = `🏠 ${state.address || 'Property'}
+        const text = `${state.address || 'Property'}
 
-📊 Offers Summary:
+Offers Summary:
 • 70% MAO: ${formatCurrency(results.cashOffer2.offerPrice)}
 • 80% MAO: ${formatCurrency(results.cashOffer3.offerPrice)}
 • Wholetail: ${formatCurrency(results.wholetail.offerPrice)}
 • Fix & Flip: ${formatCurrency(results.fixAndFlip.offerPrice)}
 
-💰 Best Strategy: ${results.bestStrategy}
-🎯 Best Offer: ${formatCurrency(results.bestOffer.offerPrice)}
+Best Strategy: ${results.bestStrategy}
+Best Offer: ${formatCurrency(results.bestOffer.offerPrice)}
 
 ARV: ${formatCurrency(state.inputs.arv)}
 As-Is: ${formatCurrency(state.inputs.asIsValue)}
@@ -169,55 +206,126 @@ Best Offer: ${formatCurrency(results.bestOffer.offerPrice)} (${results.bestStrat
     const exportToPDF = async () => {
         const jsPDF = (await import('jspdf')).default;
         const doc = new jsPDF();
+        const green = [76, 175, 80] as const;
+        const dark = [30, 40, 35] as const;
 
-        // Header
-        doc.setFontSize(20);
-        doc.text('Comp Analysis Report', 20, 20);
-
-        doc.setFontSize(12);
-        doc.text(`Property: ${state.address || 'Not specified'}`, 20, 30);
-        doc.text(`Generated: ${new Date().toLocaleDateString()}`, 20, 38);
-
-        // Property Values
-        doc.setFontSize(14);
-        doc.text('Property Values', 20, 52);
+        // Header bar
+        doc.setFillColor(...dark);
+        doc.rect(0, 0, 210, 35, 'F');
+        doc.setFontSize(22);
+        doc.setTextColor(255, 255, 255);
+        doc.text('Comp Analysis', 20, 18);
         doc.setFontSize(10);
-        doc.text(`ARV: ${formatCurrency(state.inputs.arv)}`, 20, 60);
-        doc.text(`As-Is Value: ${formatCurrency(state.inputs.asIsValue)}`, 20, 68);
-        doc.text(`Repair Estimate: ${formatCurrency(state.inputs.repairEstimate)}`, 20, 76);
-        doc.text(`List Price: ${formatCurrency(state.inputs.listPrice)}`, 20, 84);
+        doc.setTextColor(160, 200, 165);
+        doc.text(`${state.address || 'Property Not Specified'}`, 20, 28);
+        doc.text(`Generated ${new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}`, 140, 28);
 
-        // Offer Summary
-        doc.setFontSize(14);
-        doc.text('Offer Summary', 20, 98);
+        // Property values
+        let y = 48;
+        doc.setFontSize(13);
+        doc.setTextColor(...green);
+        doc.text('PROPERTY VALUES', 20, y);
+        y += 8;
         doc.setFontSize(10);
-
-        let y = 106;
-        const offers = [
-            { name: '60% of ARV (Conservative)', offer: results.cashOffer1 },
-            { name: '70% of ARV (Standard)', offer: results.cashOffer2 },
-            { name: '80% of ARV (Aggressive)', offer: results.cashOffer3 },
-            { name: '85% of ARV (Max Offer)', offer: results.maxWholesale },
-            { name: 'Wholetail', offer: results.wholetail },
-            { name: 'Fix & Flip', offer: results.fixAndFlip },
+        doc.setTextColor(80, 80, 80);
+        const vals = [
+            ['After Repair Value (ARV)', formatCurrency(state.inputs.arv)],
+            ['Repair Estimate', formatCurrency(state.inputs.repairEstimate)],
+            ['As-Is Value', formatCurrency(state.inputs.asIsValue)],
         ];
-
-        offers.forEach((item) => {
-            const status = item.offer.isViable ? '✓' : '✗';
-            doc.text(
-                `${status} ${item.name}: ${formatCurrency(item.offer.offerPrice)} (Profit: ${formatCurrency(item.offer.expectedProfit)})`,
-                20,
-                y
-            );
-            y += 8;
+        vals.forEach(([label, val]) => {
+            doc.text(label, 25, y);
+            doc.setTextColor(30, 30, 30);
+            doc.text(val, 130, y);
+            doc.setTextColor(80, 80, 80);
+            y += 7;
         });
 
-        // Best Strategy
-        doc.setFontSize(12);
-        doc.text(`Best Strategy: ${results.bestStrategy}`, 20, y + 10);
-        doc.text(`Best Offer: ${formatCurrency(results.bestOffer.offerPrice)}`, 20, y + 18);
+        // Divider
+        y += 3;
+        doc.setDrawColor(200, 200, 200);
+        doc.line(20, y, 190, y);
+        y += 8;
 
-        doc.save(`comp-analysis-${Date.now()}.pdf`);
+        // Fix & Flip Breakdown
+        doc.setFontSize(13);
+        doc.setTextColor(...green);
+        doc.text('FIX & FLIP BREAKDOWN', 20, y);
+        y += 8;
+        doc.setFontSize(10);
+
+        const ffItems = [
+            { label: 'Purchase Price (70% ARV − repairs)', value: formatCurrency(Math.round(state.inputs.arv * 0.70 - state.inputs.repairEstimate)) },
+            { label: 'Acquisition Closing (~2%)', value: formatCurrency(Math.round((state.inputs.arv * 0.70 - state.inputs.repairEstimate) * 0.02)) },
+            { label: 'Renovation Costs', value: formatCurrency(state.inputs.repairEstimate) },
+            { label: 'Buyer Agent Commission (3%)', value: formatCurrency(Math.round(state.inputs.arv * 0.03)) },
+            { label: 'Title & Recording (0.5%)', value: formatCurrency(Math.round(state.inputs.arv * 0.005)) },
+            { label: 'FL Doc Stamps (0.7%)', value: formatCurrency(Math.round(state.inputs.arv * 0.007)) },
+        ];
+
+        ffItems.forEach(({ label, value }) => {
+            doc.setTextColor(80, 80, 80);
+            doc.text(label, 25, y);
+            doc.setTextColor(30, 30, 30);
+            doc.text(value, 155, y);
+            y += 7;
+        });
+
+        // Profit highlight
+        y += 2;
+        doc.setFillColor(240, 253, 244);
+        doc.roundedRect(20, y - 4, 170, 16, 3, 3, 'F');
+        doc.setFontSize(11);
+        doc.setTextColor(...green);
+        doc.text('Fix & Flip Profit:', 25, y + 4);
+        doc.text(formatCurrency(results.fixAndFlip.expectedProfit), 155, y + 4);
+        y += 22;
+
+        // Divider
+        doc.setDrawColor(200, 200, 200);
+        doc.line(20, y, 190, y);
+        y += 8;
+
+        // Wholesale / Wholetail
+        doc.setFontSize(13);
+        doc.setTextColor(...green);
+        doc.text('WHOLESALE & WHOLETAIL', 20, y);
+        y += 8;
+        doc.setFontSize(10);
+
+        const wsItems = [
+            { label: '70% MAO', value: formatCurrency(results.cashOffer2.offerPrice), profit: formatCurrency(results.cashOffer2.expectedProfit), viable: results.cashOffer2.isViable },
+            { label: '80% MAO', value: formatCurrency(results.cashOffer3.offerPrice), profit: formatCurrency(results.cashOffer3.expectedProfit), viable: results.cashOffer3.isViable },
+            { label: 'Wholetail', value: formatCurrency(results.wholetail.offerPrice), profit: formatCurrency(results.wholetail.expectedProfit), viable: results.wholetail.isViable },
+        ];
+
+        wsItems.forEach(({ label, value, profit, viable }) => {
+            const icon = viable ? '✓' : '✗';
+            doc.setTextColor(viable ? 34 : 220, viable ? 139 : 38, viable ? 34 : 38);
+            doc.text(icon, 25, y);
+            doc.setTextColor(80, 80, 80);
+            doc.text(label, 32, y);
+            doc.setTextColor(30, 30, 30);
+            doc.text(`${value}  (${profit} profit)`, 100, y);
+            y += 7;
+        });
+
+        // Best Strategy footer
+        y += 6;
+        doc.setFillColor(...dark);
+        doc.roundedRect(20, y - 4, 170, 14, 3, 3, 'F');
+        doc.setTextColor(255, 255, 255);
+        doc.setFontSize(10);
+        doc.text(`Best Strategy: ${results.bestStrategy}`, 25, y + 4);
+        doc.text(`Best Offer: ${formatCurrency(results.bestOffer.offerPrice)}`, 120, y + 4);
+
+        // Footer
+        doc.setFontSize(8);
+        doc.setTextColor(180, 180, 180);
+        doc.text('FL Home Buyers — Comp Calculator', 20, 285);
+
+        doc.save(`comp-analysis-${state.address ? state.address.split(',')[0].replace(/\s+/g, '-') : 'report'}.pdf`);
+        showToast('PDF exported!', 'success');
     };
 
     if (!isLoaded) {
@@ -229,65 +337,38 @@ Best Offer: ${formatCurrency(results.bestOffer.offerPrice)} (${results.bestStrat
     }
 
     return (
-        <main className="min-h-screen bg-gradient-to-br from-[#0a1f0a] via-[#112211] to-[#0a1f0a]">
+        <main className="min-h-screen bg-gradient-to-br from-[#141f1a] via-[#1c2e24] to-[#141f1a]">
             {/* Header */}
-            <header className="sticky top-0 z-50 backdrop-blur-xl bg-[#0a1f0a]/90 border-b border-[#2d4a2d]/50">
-                <div className="max-w-7xl mx-auto px-4 py-4">
+            <header className="sticky top-0 z-50 backdrop-blur-xl bg-[#141f1a]/90 border-b border-[#345e3e]/40">
+                <div className="max-w-2xl mx-auto px-4 py-3">
                     <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-3">
-                            <img
-                                src="/logo.png"
-                                alt="FL Home Buyers"
-                                className="h-10 sm:h-12 w-auto"
-                            />
-                        </div>
-
-                        <div className="flex items-center gap-2 sm:gap-3">
-                            {/* Copy Button */}
-                            <button
-                                onClick={copyToClipboard}
-                                disabled={!hasInputs}
-                                className="p-2 sm:px-3 sm:py-2 rounded-lg bg-slate-800 hover:bg-slate-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-                                title="Copy to Clipboard"
-                            >
+                        <img src="/logo.png" alt="FL Home Buyers" className="h-9 w-auto" />
+                        <div className="flex items-center gap-2">
+                            <button onClick={copyToClipboard} disabled={!hasInputs}
+                                className="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                                title="Copy">
                                 <svg className="w-4 h-4 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 16H6a2 2 0 01-2-2V6a2 2 0 012-2h8a2 2 0 012 2v2m-6 12h8a2 2 0 002-2v-8a2 2 0 00-2-2h-8a2 2 0 00-2 2v8a2 2 0 002 2z" />
                                 </svg>
-                                <span className="hidden sm:inline text-sm text-slate-300">Copy</span>
                             </button>
-
-                            {/* Share Button */}
-                            <button
-                                onClick={shareOffer}
-                                disabled={!hasInputs}
-                                className="p-2 sm:px-3 sm:py-2 rounded-lg bg-slate-800 hover:bg-slate-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
-                                title="Share"
-                            >
+                            <button onClick={shareOffer} disabled={!hasInputs}
+                                className="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                                title="Share">
                                 <svg className="w-4 h-4 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8.684 13.342C8.886 12.938 9 12.482 9 12c0-.482-.114-.938-.316-1.342m0 2.684a3 3 0 110-2.684m0 2.684l6.632 3.316m-6.632-6l6.632-3.316m0 0a3 3 0 105.367-2.684 3 3 0 00-5.367 2.684zm0 9.316a3 3 0 105.368 2.684 3 3 0 00-5.368-2.684z" />
                                 </svg>
-                                <span className="hidden sm:inline text-sm text-slate-300">Share</span>
                             </button>
-
-                            {/* Export PDF Button */}
-                            <button
-                                onClick={exportToPDF}
-                                disabled={!hasInputs}
-                                className="hidden sm:flex btn-secondary items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
-                            >
-                                <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <button onClick={exportToPDF} disabled={!hasInputs}
+                                className="p-2 rounded-lg bg-slate-800 hover:bg-slate-700 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                                title="Export PDF">
+                                <svg className="w-4 h-4 text-slate-300" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                                 </svg>
-                                PDF
                             </button>
-
-                            {/* Reset Button */}
-                            <button
-                                onClick={() => setShowConfirmReset(true)}
-                                className="p-2 rounded-lg hover:bg-[#1a3318]/50 transition-colors group"
-                                title="Reset All"
-                            >
-                                <svg className="w-5 h-5 text-[#88b088] group-hover:text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <button onClick={() => setShowConfirmReset(true)}
+                                className="p-2 rounded-lg hover:bg-[#1a3318]/50 transition-colors"
+                                title="Reset All">
+                                <svg className="w-4 h-4 text-[#88b088]" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 4v5h.582m15.356 2A8.001 8.001 0 004.582 9m0 0H9m11 11v-5h-.581m0 0a8.003 8.003 0 01-15.357-2m15.357 2H15" />
                                 </svg>
                             </button>
@@ -296,55 +377,105 @@ Best Offer: ${formatCurrency(results.bestOffer.offerPrice)} (${results.bestStrat
                 </div>
             </header>
 
-            {/* Main Content */}
-            <div className="max-w-7xl mx-auto px-4 py-6">
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-                    {/* Left Column - Inputs */}
-                    <div className="lg:col-span-1 space-y-6">
-                        <AVMPanel
-                            address={state.address}
-                            onAddressChange={(address) => setState((s) => ({ ...s, address }))}
-                            onApplyEstimate={handleApplyAVMEstimate}
-                        />
+            {/* Main Content — single column, mobile-first */}
+            <div className="max-w-2xl mx-auto px-4 py-5 space-y-5">
 
-                        <PropertyInput
-                            inputs={state.inputs}
-                            onInputsChange={(inputs) => setState((s) => ({ ...s, inputs }))}
-                            sqft={state.sqft}
-                            onSqftChange={(sqft) => setState((s) => ({ ...s, sqft }))}
-                        />
+                {/* Mode Toggle: AVM Lookup / Manual Entry */}
+                <Tabs value={mode} onValueChange={(v) => setMode(v as 'avm' | 'manual')} className="w-full">
+                    <TabsList className="grid w-full grid-cols-2 bg-slate-800/60 rounded-xl p-1 h-auto">
+                        <TabsTrigger value="avm" className="rounded-lg py-2 text-sm font-medium data-[state=active]:bg-slate-700 data-[state=active]:text-white data-[state=active]:shadow-md text-slate-400">
+                            AVM Lookup
+                        </TabsTrigger>
+                        <TabsTrigger value="manual" className="rounded-lg py-2 text-sm font-medium data-[state=active]:bg-slate-700 data-[state=active]:text-white data-[state=active]:shadow-md text-slate-400">
+                            Manual Entry
+                        </TabsTrigger>
+                    </TabsList>
+                </Tabs>
 
-                        <SettingsPanel
-                            settings={state.settings}
-                            onSettingsChange={(settings) => setState((s) => ({ ...s, settings }))}
-                        />
+                {/* AVM Mode */}
+                {mode === 'avm' && (
+                    <div>
+                        {avmCollapsed ? (
+                            /* Collapsed AVM — one-line summary */
+                            <button
+                                onClick={() => setAvmCollapsed(false)}
+                                className="w-full glass-card p-4 text-left flex items-center justify-between hover:bg-slate-800/70 transition-colors"
+                            >
+                                <div className="min-w-0">
+                                    <p className="text-sm text-slate-400 truncate">{state.address || 'No address'}</p>
+                                    <p className="text-lg font-bold text-white">ARV: {formatCurrency(state.inputs.arv)}</p>
+                                </div>
+                                <span className="text-xs text-slate-500 ml-3 shrink-0">Tap to edit</span>
+                            </button>
+                        ) : (
+                            /* Expanded AVM Panel */
+                            <AVMPanel
+                                address={state.address}
+                                onAddressChange={(address) => setState((s) => ({ ...s, address }))}
+                                onApplyEstimate={handleApplyAVMEstimate}
+                            />
+                        )}
                     </div>
+                )}
 
-                    {/* Right Column - Results */}
-                    <div className="lg:col-span-2">
-                        <OfferResultsDisplay
-                            results={results}
-                            hasInputs={hasInputs}
-                            arv={state.inputs.arv}
-                            repairEstimate={state.inputs.repairEstimate}
-                            sqft={state.sqft}
-                        />
+                {/* Manual Mode — ARV-only input with money formatting */}
+                {mode === 'manual' && (
+                    <div className="glass-card p-5">
+                        <label className="text-xs text-slate-400 mb-2 block uppercase tracking-wider font-semibold">After Repair Value (ARV)</label>
+                        <div className="relative">
+                            <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 text-lg font-medium">$</span>
+                            <input
+                                type="text"
+                                inputMode="numeric"
+                                pattern="[0-9,]*"
+                                value={formatMoneyInput(state.inputs.arv)}
+                                onChange={(e) => {
+                                    const val = parseMoneyInput(e.target.value);
+                                    setState((s) => ({
+                                        ...s,
+                                        inputs: {
+                                            ...s.inputs,
+                                            arv: val,
+                                            asIsValue: Math.round(val * 0.90),
+                                            listPrice: Math.round(val * 0.90),
+                                        },
+                                    }));
+                                }}
+                                placeholder="350,000"
+                                className="w-full pl-9 pr-4 py-3 rounded-xl bg-slate-800/80 border border-slate-600 text-white text-2xl font-bold focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition-all placeholder:text-slate-600"
+                            />
+                        </div>
+                        <p className="text-xs text-slate-500 mt-2">As-Is value auto-set to 90% of ARV</p>
                     </div>
-                </div>
+                )}
+
+                {/* Tabbed Results */}
+                <OfferResultsDisplay
+                    results={results}
+                    hasInputs={hasInputs}
+                    arv={state.inputs.arv}
+                    repairEstimate={state.inputs.repairEstimate}
+                    sqft={state.sqft}
+                    inputs={state.inputs}
+                    onInputsChange={(inputs) => setState((s) => ({ ...s, inputs }))}
+                    onSqftChange={(sqft) => setState((s) => ({ ...s, sqft }))}
+                    county={detectedCounty}
+                />
+
+                {/* Settings — collapsible at bottom */}
+                <SettingsPanel
+                    settings={state.settings}
+                    onSettingsChange={(settings) => setState((s) => ({ ...s, settings }))}
+                />
             </div>
 
             {/* Footer */}
-            <footer className="mt-12 pb-6 text-center text-sm text-[#557755]">
-                <p>FL Home Buyers Comp Calculator • Real-time calculations • Data saved locally</p>
+            <footer className="mt-8 pb-6 text-center text-sm text-[#557755]">
+                <p>FL Home Buyers Comp Calculator</p>
             </footer>
 
-            {/* Toast Notifications */}
             <ToastContainer />
-
-            {/* Offline Indicator */}
             <OfflineIndicator />
-
-            {/* Confirm Reset Modal */}
             <ConfirmModal
                 isOpen={showConfirmReset}
                 title="Reset All Data?"

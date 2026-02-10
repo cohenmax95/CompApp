@@ -3,27 +3,20 @@
 @tailwind utilities;
 
 :root {
-  /* Dark green theme - FL Home Buyers brand */
-  --bg-primary: #0a1f0a;
-  /* Very dark green-black */
-  --bg-secondary: #112211;
-  /* Dark green */
-  --bg-tertiary: #1a3318;
-  /* Medium dark green */
-  --text-primary: #f0fff0;
-  /* Light green tint white */
-  --text-secondary: #88b088;
-  /* Muted green */
-  --text-muted: #557755;
-  /* Dark muted green */
-  --border-color: #2d4a2d;
-  /* Green-tinted border */
+  /* Lighter dark green theme */
+  --bg-primary: #141f1a;
+  --bg-secondary: #1c2e24;
+  --bg-tertiary: #26402f;
+  --text-primary: #ecf7ee;
+  --text-secondary: #a5ccaa;
+  --text-muted: #74a07b;
+  --border-color: #345e3e;
   /* FL Home Buyers brand green gradient */
   --accent-gradient: linear-gradient(135deg, #4CAF50 0%, #2E7D32 100%);
   --accent-color: #4CAF50;
   --accent-dark: #2E7D32;
-  --glass-bg: rgba(17, 34, 17, 0.85);
-  --glass-border: rgba(76, 175, 80, 0.2);
+  --glass-bg: rgba(26, 46, 36, 0.92);
+  --glass-border: rgba(76, 175, 80, 0.3);
 }
 
 * {

@@ -1,6 +1,6 @@
 'use client';
 
-import { SingleOfferResult, formatCurrency, formatPercent } from '@/lib/calculations';
+import { SingleOfferResult, formatCurrency } from '@/lib/calculations';
 
 interface OfferCardProps {
     title: string;

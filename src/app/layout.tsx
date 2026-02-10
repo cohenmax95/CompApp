@@ -24,11 +24,10 @@ export default function RootLayout({
     return (
         <html lang="en">
             <head>
-                <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no" />
+                <meta name="viewport" content="width=device-width, initial-scale=1" />
                 <meta name="mobile-web-app-capable" content="yes" />
                 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
                 <meta name="theme-color" content="#0f172a" />
-                <link rel="manifest" href="/manifest.json" />
                 <link rel="apple-touch-icon" href="/favicon.png" />
             </head>
             <body className={inter.className}>
