@@ -99,7 +99,7 @@ export default function FixFlipCalculator({ arv, repairEstimate, sqft, county }:
     const [arvPercent, setArvPercent] = useState(70);
     const [holdMonths, setHoldMonths] = useState(5);
     const [loanPercent, setLoanPercent] = useState(90);
-    const [expanded, setExpanded] = useState<string | null>(null);
+    const [expanded, setExpanded] = useState<Set<string>>(new Set());
     const [costs, setCosts] = useState<CostAssumptions>(DEFAULT_COSTS);
     const [countyApplied, setCountyApplied] = useState<string | null>(null);
 
@@ -116,7 +116,16 @@ export default function FixFlipCalculator({ arv, repairEstimate, sqft, county }:
         setCosts((c) => ({ ...c, [key]: value }));
     };
 
-    const toggle = (section: string) => setExpanded(expanded === section ? null : section);
+    const toggle = (section: string) => setExpanded((prev) => {
+        const next = new Set(prev);
+        if (next.has(section)) next.delete(section);
+        else next.add(section);
+        return next;
+    });
+
+    const allSections = ['acq', 'hold', 'resale'];
+    const allExpanded = allSections.every((s) => expanded.has(s));
+    const toggleAll = () => setExpanded(allExpanded ? new Set() : new Set(allSections));
 
     // STEP 1: Purchase Price
     const purchasePrice = Math.round(arv * (arvPercent / 100) - repairEstimate);
@@ -210,17 +219,20 @@ export default function FixFlipCalculator({ arv, repairEstimate, sqft, county }:
 
             {/* Collapsible cost sections */}
             <div className="space-y-2 text-sm">
+                <button onClick={toggleAll} className="w-full text-right text-xs text-slate-500 hover:text-slate-300 transition-colors px-1 pb-1">
+                    {allExpanded ? '▼ Collapse All' : '▶ Expand All'}
+                </button>
                 {/* Acquisition */}
                 <button onClick={() => toggle('acq')} className="w-full p-3 rounded-xl bg-slate-800/50 hover:bg-slate-800/70 transition-colors text-left">
                     <div className="flex justify-between items-center">
                         <div className="flex items-center gap-2">
-                            <svg className={`w-3 h-3 text-slate-500 transition-transform ${expanded === 'acq' ? 'rotate-90' : ''}`} fill="currentColor" viewBox="0 0 20 20"><path d="M6 6l8 4-8 4V6z" /></svg>
+                            <svg className={`w-3 h-3 text-slate-500 transition-transform ${expanded.has('acq') ? 'rotate-90' : ''}`} fill="currentColor" viewBox="0 0 20 20"><path d="M6 6l8 4-8 4V6z" /></svg>
                             <span className="text-slate-400">Acquisition</span>
                         </div>
                         <span className="font-bold text-white">{formatCurrency(acquisitionTotal)}</span>
                     </div>
                 </button>
-                {expanded === 'acq' && (
+                {expanded.has('acq') && (
                     <div className="ml-5 p-3 rounded-xl bg-slate-900/50 text-xs text-slate-500 space-y-1.5">
                         <div className="flex justify-between items-center">
                             <span>Purchase Price ({arvPercent}% ARV − repairs)</span>
@@ -237,13 +249,13 @@ export default function FixFlipCalculator({ arv, repairEstimate, sqft, county }:
                 <button onClick={() => toggle('hold')} className="w-full p-3 rounded-xl bg-slate-800/50 hover:bg-slate-800/70 transition-colors text-left">
                     <div className="flex justify-between items-center">
                         <div className="flex items-center gap-2">
-                            <svg className={`w-3 h-3 text-slate-500 transition-transform ${expanded === 'hold' ? 'rotate-90' : ''}`} fill="currentColor" viewBox="0 0 20 20"><path d="M6 6l8 4-8 4V6z" /></svg>
+                            <svg className={`w-3 h-3 text-slate-500 transition-transform ${expanded.has('hold') ? 'rotate-90' : ''}`} fill="currentColor" viewBox="0 0 20 20"><path d="M6 6l8 4-8 4V6z" /></svg>
                             <span className="text-slate-400">Holding & Renovation ({holdMonths} mo)</span>
                         </div>
                         <span className="font-bold text-white">{formatCurrency(holdingTotal)}</span>
                     </div>
                 </button>
-                {expanded === 'hold' && (
+                {expanded.has('hold') && (
                     <div className="ml-5 p-3 rounded-xl bg-slate-900/50 text-xs text-slate-500 space-y-1.5">
                         <div className="flex justify-between items-center"><span>Hard Money Points (<EditableValue value={costs.hmPoints} onChange={(v) => updateCost('hmPoints', v)} />)</span><span>{formatCurrency(hardMoneyPoints)}</span></div>
                         <div className="flex justify-between items-center"><span>Interest (<EditableValue value={costs.hmInterestRate} onChange={(v) => updateCost('hmInterestRate', v)} />, {holdMonths} mo)</span><span>{formatCurrency(hardMoneyInterest)}</span></div>
@@ -262,13 +274,13 @@ export default function FixFlipCalculator({ arv, repairEstimate, sqft, county }:
                 <button onClick={() => toggle('resale')} className="w-full p-3 rounded-xl bg-slate-800/50 hover:bg-slate-800/70 transition-colors text-left">
                     <div className="flex justify-between items-center">
                         <div className="flex items-center gap-2">
-                            <svg className={`w-3 h-3 text-slate-500 transition-transform ${expanded === 'resale' ? 'rotate-90' : ''}`} fill="currentColor" viewBox="0 0 20 20"><path d="M6 6l8 4-8 4V6z" /></svg>
+                            <svg className={`w-3 h-3 text-slate-500 transition-transform ${expanded.has('resale') ? 'rotate-90' : ''}`} fill="currentColor" viewBox="0 0 20 20"><path d="M6 6l8 4-8 4V6z" /></svg>
                             <span className="text-slate-400">Resale Costs</span>
                         </div>
                         <span className="font-bold text-white">{formatCurrency(totalResaleClosing)}</span>
                     </div>
                 </button>
-                {expanded === 'resale' && (
+                {expanded.has('resale') && (
                     <div className="ml-5 p-3 rounded-xl bg-slate-900/50 text-xs text-slate-500 space-y-1.5">
                         <div className="flex justify-between items-center"><span>Buyer&apos;s Agent (<EditableValue value={costs.buyerAgentPct} onChange={(v) => updateCost('buyerAgentPct', v)} />)</span><span>{formatCurrency(buyerAgentComm)}</span></div>
                         <div className="flex justify-between items-center"><span>Title & Recording (<EditableValue value={costs.titlePct} onChange={(v) => updateCost('titlePct', v)} />)</span><span>{formatCurrency(titleAndRecording)}</span></div>

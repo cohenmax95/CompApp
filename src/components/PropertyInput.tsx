@@ -88,10 +88,24 @@ export default function PropertyInput({
                             </button>
                         </div>
 
-                        {/* Selected Value Display */}
-                        <div className="p-3 rounded-xl bg-slate-800/50 text-center">
-                            <span className="text-slate-400 text-sm">Selected: </span>
-                            <span className="text-white font-bold text-lg">{formatCurrency(inputs.repairEstimate)}</span>
+                        {/* Custom / Selected Value Input */}
+                        <div className="p-3 rounded-xl bg-slate-800/50">
+                            <label className="text-xs text-slate-500 mb-1.5 block uppercase tracking-wide font-medium">Custom Rehab Amount</label>
+                            <div className="relative">
+                                <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 font-medium">$</span>
+                                <input
+                                    type="text"
+                                    inputMode="numeric"
+                                    pattern="[0-9,]*"
+                                    value={inputs.repairEstimate > 0 ? inputs.repairEstimate.toLocaleString() : ''}
+                                    onChange={(e) => {
+                                        const val = parseInt(e.target.value.replace(/[^0-9]/g, '')) || 0;
+                                        applyRepair(val);
+                                    }}
+                                    placeholder="Enter custom amount"
+                                    className="input-field pl-7 font-semibold text-lg"
+                                />
+                            </div>
                         </div>
                     </div>
                 )}
