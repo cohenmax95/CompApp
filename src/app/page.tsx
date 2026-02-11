@@ -472,6 +472,9 @@ Best Offer: ${formatCurrency(results.bestOffer.offerPrice)} (${results.bestStrat
             {/* Footer */}
             <footer className="mt-8 pb-6 text-center text-sm text-[#557755]">
                 <p>FL Home Buyers Comp Calculator</p>
+                <a href="/tutorial" className="inline-block mt-1.5 text-xs text-slate-500 hover:text-emerald-400 transition-colors underline underline-offset-2 decoration-slate-700 hover:decoration-emerald-400">
+                    How to Use This Tool →
+                </a>
             </footer>
 
             <ToastContainer />
