@@ -21,6 +21,8 @@ interface AppState {
     inputs: OfferInputs;
     address: string;
     sqft: number;
+    beds: number;
+    baths: number;
 }
 
 const STORAGE_KEY = 'compapp-state';
@@ -35,6 +37,8 @@ const DEFAULT_STATE: AppState = {
     },
     address: '',
     sqft: 0,
+    beds: 0,
+    baths: 0,
 };
 
 export default function Home() {
@@ -218,6 +222,18 @@ Best Offer: ${formatCurrency(results.bestOffer.offerPrice)} (${results.bestStrat
         doc.setFontSize(10);
         doc.setTextColor(160, 200, 165);
         doc.text(`${state.address || 'Property Not Specified'}`, 20, 28);
+        const detailParts: string[] = [];
+        if (state.beds > 0) detailParts.push(`${state.beds} bed`);
+        if (state.baths > 0) detailParts.push(`${state.baths} bath`);
+        if (state.sqft > 0) detailParts.push(`${state.sqft.toLocaleString()} sqft`);
+        const detailStr = detailParts.length > 0 ? detailParts.join(' · ') : '';
+        if (detailStr) {
+            doc.setFontSize(9);
+            doc.setTextColor(140, 180, 145);
+            doc.text(detailStr, 20, 33);
+        }
+        doc.setFontSize(10);
+        doc.setTextColor(160, 200, 165);
         doc.text(`Generated ${new Date().toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}`, 140, 28);
 
         // Property values
@@ -420,32 +436,87 @@ Best Offer: ${formatCurrency(results.bestOffer.offerPrice)} (${results.bestStrat
 
                 {/* Manual Mode — ARV-only input with money formatting */}
                 {mode === 'manual' && (
-                    <div className="glass-card p-5">
-                        <label className="text-xs text-slate-400 mb-2 block uppercase tracking-wider font-semibold">After Repair Value (ARV)</label>
-                        <div className="relative">
-                            <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 text-lg font-medium">$</span>
+                    <div className="glass-card p-5 space-y-4">
+                        {/* Address */}
+                        <div>
+                            <label className="text-xs text-slate-400 mb-1.5 block uppercase tracking-wider font-semibold">Property Address</label>
                             <input
                                 type="text"
-                                inputMode="numeric"
-                                pattern="[0-9,]*"
-                                value={formatMoneyInput(state.inputs.arv)}
-                                onChange={(e) => {
-                                    const val = parseMoneyInput(e.target.value);
-                                    setState((s) => ({
-                                        ...s,
-                                        inputs: {
-                                            ...s.inputs,
-                                            arv: val,
-                                            asIsValue: Math.round(val * 0.90),
-                                            listPrice: Math.round(val * 0.90),
-                                        },
-                                    }));
-                                }}
-                                placeholder="350,000"
-                                className="w-full pl-9 pr-4 py-3 rounded-xl bg-slate-800/80 border border-slate-600 text-white text-2xl font-bold focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition-all placeholder:text-slate-600"
+                                value={state.address}
+                                onChange={(e) => setState((s) => ({ ...s, address: e.target.value }))}
+                                placeholder="123 Main St, Tampa, FL 33601"
+                                className="w-full px-4 py-2.5 rounded-xl bg-slate-800/80 border border-slate-600 text-white text-sm focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition-all placeholder:text-slate-600"
                             />
                         </div>
-                        <p className="text-xs text-slate-500 mt-2">As-Is value auto-set to 90% of ARV</p>
+
+                        {/* Beds / Baths / Sqft row */}
+                        <div className="grid grid-cols-3 gap-3">
+                            <div>
+                                <label className="text-xs text-slate-500 mb-1 block">Beds</label>
+                                <input
+                                    type="text"
+                                    inputMode="numeric"
+                                    value={state.beds > 0 ? state.beds : ''}
+                                    onChange={(e) => setState((s) => ({ ...s, beds: parseInt(e.target.value.replace(/[^0-9]/g, '')) || 0 }))}
+                                    placeholder="3"
+                                    className="w-full px-3 py-2 rounded-xl bg-slate-800/80 border border-slate-700 text-white text-center font-semibold focus:ring-2 focus:ring-emerald-500 transition-all placeholder:text-slate-600"
+                                />
+                            </div>
+                            <div>
+                                <label className="text-xs text-slate-500 mb-1 block">Baths</label>
+                                <input
+                                    type="text"
+                                    inputMode="numeric"
+                                    value={state.baths > 0 ? state.baths : ''}
+                                    onChange={(e) => setState((s) => ({ ...s, baths: parseFloat(e.target.value.replace(/[^0-9.]/g, '')) || 0 }))}
+                                    placeholder="2"
+                                    className="w-full px-3 py-2 rounded-xl bg-slate-800/80 border border-slate-700 text-white text-center font-semibold focus:ring-2 focus:ring-emerald-500 transition-all placeholder:text-slate-600"
+                                />
+                            </div>
+                            <div>
+                                <label className="text-xs text-slate-500 mb-1 block">Sq Ft</label>
+                                <input
+                                    type="text"
+                                    inputMode="numeric"
+                                    value={state.sqft > 0 ? state.sqft.toLocaleString() : ''}
+                                    onChange={(e) => {
+                                        const val = parseInt(e.target.value.replace(/[^0-9]/g, '')) || 0;
+                                        setState((s) => ({ ...s, sqft: val }));
+                                    }}
+                                    placeholder="1,800"
+                                    className="w-full px-3 py-2 rounded-xl bg-slate-800/80 border border-slate-700 text-white text-center font-semibold focus:ring-2 focus:ring-emerald-500 transition-all placeholder:text-slate-600"
+                                />
+                            </div>
+                        </div>
+
+                        {/* ARV */}
+                        <div>
+                            <label className="text-xs text-slate-400 mb-1.5 block uppercase tracking-wider font-semibold">After Repair Value (ARV)</label>
+                            <div className="relative">
+                                <span className="absolute left-4 top-1/2 -translate-y-1/2 text-slate-400 text-lg font-medium">$</span>
+                                <input
+                                    type="text"
+                                    inputMode="numeric"
+                                    pattern="[0-9,]*"
+                                    value={formatMoneyInput(state.inputs.arv)}
+                                    onChange={(e) => {
+                                        const val = parseMoneyInput(e.target.value);
+                                        setState((s) => ({
+                                            ...s,
+                                            inputs: {
+                                                ...s.inputs,
+                                                arv: val,
+                                                asIsValue: Math.round(val * 0.90),
+                                                listPrice: Math.round(val * 0.90),
+                                            },
+                                        }));
+                                    }}
+                                    placeholder="350,000"
+                                    className="w-full pl-9 pr-4 py-3 rounded-xl bg-slate-800/80 border border-slate-600 text-white text-2xl font-bold focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition-all placeholder:text-slate-600"
+                                />
+                            </div>
+                            <p className="text-xs text-slate-500 mt-2">As-Is value auto-set to 90% of ARV</p>
+                        </div>
                     </div>
                 )}
 
