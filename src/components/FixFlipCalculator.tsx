@@ -192,7 +192,7 @@ export default function FixFlipCalculator({ arv, repairEstimate, sqft, county }:
                 <div>
                     <div className="flex items-center justify-between mb-1.5">
                         <label className="text-xs text-slate-500">Loan Amount</label>
-                        <span className="text-sm font-bold text-purple-400">{loanPercent}%</span>
+                        <span className="text-sm font-bold text-teal-400">{loanPercent}%</span>
                     </div>
                     <input
                         type="range" min="70" max="100" value={loanPercent}
@@ -203,7 +203,7 @@ export default function FixFlipCalculator({ arv, repairEstimate, sqft, county }:
                 <div>
                     <div className="flex items-center justify-between mb-1.5">
                         <label className="text-xs text-slate-500">Hold Time</label>
-                        <span className="text-sm font-bold text-cyan-400">{holdMonths} mo</span>
+                        <span className="text-sm font-bold text-slate-300">{holdMonths} mo</span>
                     </div>
                     <input
                         type="range" min="2" max="12" value={holdMonths}
@@ -290,31 +290,29 @@ export default function FixFlipCalculator({ arv, repairEstimate, sqft, county }:
             </div>
 
             {/* Profit Summary — always visible */}
-            <div className={`p-4 rounded-xl border-2 ${grossProfit >= 0 ? 'bg-emerald-500/10 border-emerald-500/30' : 'bg-red-500/10 border-red-500/30'}`}>
-                <div className="grid grid-cols-2 gap-4 text-center">
+            <div className={`rounded-xl overflow-hidden border ${grossProfit >= 0 ? 'border-emerald-500/20 bg-emerald-500/5' : 'border-red-500/20 bg-red-500/5'}`}>
+                <div className="px-4 py-3 flex items-center justify-between">
                     <div>
-                        <p className="text-xs text-slate-400 mb-1">Total Investment</p>
-                        <p className="text-xl font-bold text-white">{formatCurrency(totalInvestment)}</p>
+                        <p className="text-[10px] uppercase tracking-wider text-slate-500 font-medium">Total In</p>
+                        <p className="text-lg font-bold text-white mt-0.5">{formatCurrency(totalInvestment)}</p>
                     </div>
-                    <div>
-                        <p className="text-xs text-slate-400 mb-1">Sale Price (ARV)</p>
-                        <p className="text-xl font-bold text-white">{formatCurrency(arv)}</p>
+                    <div className="text-right">
+                        <p className="text-[10px] uppercase tracking-wider text-slate-500 font-medium">Sale (ARV)</p>
+                        <p className="text-lg font-bold text-white mt-0.5">{formatCurrency(arv)}</p>
                     </div>
                 </div>
-                <div className="border-t border-slate-700 mt-3 pt-3">
-                    <div className="flex justify-between items-center">
-                        <div>
-                            <p className="text-xs text-slate-400">Net Profit</p>
-                            <p className={`text-2xl font-bold ${grossProfit >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                                {formatCurrency(grossProfit)}
-                            </p>
-                        </div>
-                        <div className="text-right">
-                            <p className="text-xs text-slate-400">ROI</p>
-                            <p className={`text-2xl font-bold ${parseFloat(roi) >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
-                                {roi}%
-                            </p>
-                        </div>
+                <div className={`px-4 py-3 flex items-center justify-between border-t ${grossProfit >= 0 ? 'border-emerald-500/15' : 'border-red-500/15'}`}>
+                    <div>
+                        <p className="text-[10px] uppercase tracking-wider text-slate-500 font-medium mb-0.5">Net Profit</p>
+                        <p className={`text-2xl font-extrabold tracking-tight ${grossProfit >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                            {formatCurrency(grossProfit)}
+                        </p>
+                    </div>
+                    <div className="text-right">
+                        <p className="text-[10px] uppercase tracking-wider text-slate-500 font-medium mb-0.5">ROI</p>
+                        <p className={`text-2xl font-extrabold tracking-tight ${parseFloat(roi) >= 0 ? 'text-emerald-400' : 'text-red-400'}`}>
+                            {roi}%
+                        </p>
                     </div>
                 </div>
             </div>

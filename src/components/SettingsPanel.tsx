@@ -23,7 +23,7 @@ export default function SettingsPanel({ settings, onSettingsChange }: SettingsPa
     };
 
     return (
-        <div className="glass-card p-5">
+        <div className="glass-card p-4">
             <button
                 onClick={() => setIsExpanded(!isExpanded)}
                 className="w-full flex items-center justify-between text-left"
@@ -43,7 +43,7 @@ export default function SettingsPanel({ settings, onSettingsChange }: SettingsPa
             </button>
 
             {isExpanded && (
-                <div className="mt-5 pt-5 border-t border-slate-700/50 space-y-5 animate-fade-in">
+                <div className="mt-4 pt-4 border-t border-slate-700/50 space-y-4 animate-fade-in">
                     {/* Profit Margins */}
                     <div>
                         <h4 className="text-sm font-medium text-slate-300 mb-3">Profit Margins</h4>
@@ -157,7 +157,7 @@ export default function SettingsPanel({ settings, onSettingsChange }: SettingsPa
                                         type="number"
                                         value={settings.minProfitReserve}
                                         onChange={(e) => updateSetting('minProfitReserve', parseFloat(e.target.value))}
-                                        className="input-field pl-7"
+                                        className="input-field pl-8"
                                         min="0"
                                         step="1000"
                                     />
@@ -171,7 +171,7 @@ export default function SettingsPanel({ settings, onSettingsChange }: SettingsPa
                                         type="number"
                                         value={settings.makeReadyReserve}
                                         onChange={(e) => updateSetting('makeReadyReserve', parseFloat(e.target.value))}
-                                        className="input-field pl-7"
+                                        className="input-field pl-8"
                                         min="0"
                                         step="1000"
                                     />

@@ -30,9 +30,9 @@ export default function PropertyInput({
     };
 
     return (
-        <div className="glass-card p-5">
+        <div className="glass-card p-4">
             {/* Header */}
-            <div className="mb-5">
+            <div className="mb-3">
                 <h3 className="font-bold text-white text-lg">Repair Estimate</h3>
                 <p className="text-xs text-slate-500">Set sqft and choose repair level</p>
             </div>
@@ -58,7 +58,7 @@ export default function PropertyInput({
                         <div className="grid grid-cols-3 gap-2">
                             <button
                                 onClick={() => applyRepair(repairEstimate.low)}
-                                className={`p-3 rounded-xl text-center transition-all ${inputs.repairEstimate === repairEstimate.low
+                                className={`p-2.5 rounded-xl text-center transition-all ${inputs.repairEstimate === repairEstimate.low
                                     ? 'bg-amber-500 text-white shadow-lg'
                                     : 'bg-slate-800 hover:bg-slate-700'
                                     }`}
@@ -68,7 +68,7 @@ export default function PropertyInput({
                             </button>
                             <button
                                 onClick={() => applyRepair(repairEstimate.median)}
-                                className={`p-3 rounded-xl text-center transition-all ${inputs.repairEstimate === repairEstimate.median
+                                className={`p-2.5 rounded-xl text-center transition-all ${inputs.repairEstimate === repairEstimate.median
                                     ? 'bg-amber-500 text-white shadow-lg'
                                     : 'bg-slate-800 hover:bg-slate-700'
                                     }`}
@@ -78,7 +78,7 @@ export default function PropertyInput({
                             </button>
                             <button
                                 onClick={() => applyRepair(repairEstimate.high)}
-                                className={`p-3 rounded-xl text-center transition-all ${inputs.repairEstimate === repairEstimate.high
+                                className={`p-2.5 rounded-xl text-center transition-all ${inputs.repairEstimate === repairEstimate.high
                                     ? 'bg-amber-500 text-white shadow-lg'
                                     : 'bg-slate-800 hover:bg-slate-700'
                                     }`}
@@ -89,7 +89,7 @@ export default function PropertyInput({
                         </div>
 
                         {/* Custom / Selected Value Input */}
-                        <div className="p-3 rounded-xl bg-slate-800/50">
+                        <div className="p-2.5 rounded-xl bg-slate-800/50">
                             <label className="text-xs text-slate-500 mb-1.5 block uppercase tracking-wide font-medium">Custom Rehab Amount</label>
                             <div className="relative">
                                 <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-500 font-medium">$</span>
@@ -103,7 +103,7 @@ export default function PropertyInput({
                                         applyRepair(val);
                                     }}
                                     placeholder="Enter custom amount"
-                                    className="input-field pl-7 font-semibold text-lg"
+                                    className="input-field pl-8 font-semibold text-lg"
                                 />
                             </div>
                         </div>

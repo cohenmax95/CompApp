@@ -40,7 +40,7 @@ export default function OfferResultsDisplay({
 
     if (!hasInputs) {
         return (
-            <div className="glass-card p-8 text-center">
+            <div className="glass-card p-6 text-center">
                 <h3 className="text-lg font-semibold text-white mb-2">Ready to Calculate</h3>
                 <p className="text-slate-400 text-sm">Enter ARV and property details above to see offers</p>
             </div>
@@ -67,7 +67,7 @@ export default function OfferResultsDisplay({
 
             {/* Tab Content */}
             {activeTab === 'fixflip' ? (
-                <div className="glass-card p-5 space-y-5">
+                <div className="glass-card p-4 space-y-4">
                     {/* Repair Estimate inside Fix & Flip tab */}
                     <PropertyInput
                         inputs={inputs}
@@ -76,19 +76,19 @@ export default function OfferResultsDisplay({
                         onSqftChange={onSqftChange}
                     />
 
-                    <div className="border-t border-slate-700/50 pt-4">
+                    <div className="border-t border-slate-700/50 pt-3">
                         <h3 className="font-bold text-white text-lg mb-1">Fix & Flip Breakdown</h3>
-                        <p className="text-xs text-slate-500 mb-4">Step-by-step profit analysis</p>
+                        <p className="text-xs text-slate-500 mb-3">Step-by-step profit analysis</p>
                         <FixFlipCalculator arv={arv} repairEstimate={repairEstimate} sqft={sqft} county={county} />
                     </div>
                 </div>
             ) : (
                 <div className="space-y-5">
                     {/* Wholesale MAO Slider */}
-                    <div className="glass-card p-5">
-                        <h3 className="text-lg font-semibold text-white mb-4">Wholesale Offer (MAO)</h3>
+                    <div className="glass-card p-4">
+                        <h3 className="text-lg font-semibold text-white mb-3">Wholesale Offer (MAO)</h3>
 
-                        <div className="mb-5">
+                        <div className="mb-4">
                             <div className="flex items-center justify-between mb-2">
                                 <span className="text-sm text-slate-400">% of ARV</span>
                                 <span className="text-2xl font-bold text-emerald-400">{arvPercent}%</span>
@@ -141,7 +141,7 @@ export default function OfferResultsDisplay({
                     </div>
 
                     {/* Wholetail Card */}
-                    <div className="glass-card p-5">
+                    <div className="glass-card p-4">
                         <h3 className="text-lg font-semibold text-white mb-3">Wholetail</h3>
                         <OfferCard
                             title="Wholetail"

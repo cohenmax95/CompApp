@@ -15,6 +15,7 @@ import OfferResultsDisplay from '@/components/OfferResults';
 import AVMPanel, { AVMPanelRef } from '@/components/AVMPanel';
 import { ToastContainer, OfflineIndicator, ConfirmModal, showToast } from '@/components/Toast';
 import { Tabs, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import AddressAutocomplete from '@/components/AddressAutocomplete';
 
 interface AppState {
     settings: OfferSettings;
@@ -353,9 +354,9 @@ Best Offer: ${formatCurrency(results.bestOffer.offerPrice)} (${results.bestStrat
     }
 
     return (
-        <main className="min-h-screen bg-gradient-to-br from-[#141f1a] via-[#1c2e24] to-[#141f1a]">
+        <main className="min-h-screen bg-gradient-to-br from-[#1a2b22] via-[#243828] to-[#1a2b22]">
             {/* Header */}
-            <header className="sticky top-0 z-50 backdrop-blur-xl bg-[#141f1a]/90 border-b border-[#345e3e]/40">
+            <header className="sticky top-0 z-50 backdrop-blur-xl bg-[#1a2b22]/90 border-b border-[#3d6b48]/30">
                 <div className="max-w-2xl mx-auto px-4 py-3">
                     <div className="flex items-center justify-between">
                         <img src="/logo.png" alt="FL Home Buyers" className="h-9 w-auto" />
@@ -394,7 +395,7 @@ Best Offer: ${formatCurrency(results.bestOffer.offerPrice)} (${results.bestStrat
             </header>
 
             {/* Main Content — single column, mobile-first */}
-            <div className="max-w-2xl mx-auto px-4 py-5 space-y-5">
+            <div className="max-w-2xl mx-auto px-3.5 py-4 space-y-4">
 
                 {/* Mode Toggle: AVM Lookup / Manual Entry */}
                 <Tabs value={mode} onValueChange={(v) => setMode(v as 'avm' | 'manual')} className="w-full">
@@ -436,14 +437,13 @@ Best Offer: ${formatCurrency(results.bestOffer.offerPrice)} (${results.bestStrat
 
                 {/* Manual Mode — ARV-only input with money formatting */}
                 {mode === 'manual' && (
-                    <div className="glass-card p-5 space-y-4">
+                    <div className="glass-card p-4 space-y-3">
                         {/* Address */}
                         <div>
                             <label className="text-xs text-slate-400 mb-1.5 block uppercase tracking-wider font-semibold">Property Address</label>
-                            <input
-                                type="text"
+                            <AddressAutocomplete
                                 value={state.address}
-                                onChange={(e) => setState((s) => ({ ...s, address: e.target.value }))}
+                                onChange={(address) => setState((s) => ({ ...s, address }))}
                                 placeholder="123 Main St, Tampa, FL 33601"
                                 className="w-full px-4 py-2.5 rounded-xl bg-slate-800/80 border border-slate-600 text-white text-sm focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 transition-all placeholder:text-slate-600"
                             />
@@ -541,7 +541,7 @@ Best Offer: ${formatCurrency(results.bestOffer.offerPrice)} (${results.bestStrat
             </div>
 
             {/* Footer */}
-            <footer className="mt-8 pb-6 text-center text-sm text-[#557755]">
+            <footer className="mt-6 pb-5 text-center text-sm text-[#557755]">
                 <p>FL Home Buyers Comp Calculator</p>
                 <a href="/tutorial" className="inline-block mt-1.5 text-xs text-slate-500 hover:text-emerald-400 transition-colors underline underline-offset-2 decoration-slate-700 hover:decoration-emerald-400">
                     How to Use This Tool →

@@ -585,7 +585,7 @@ const AVMPanel = forwardRef<AVMPanelRef, AVMPanelProps>(({ address, onAddressCha
                                         setManualARV(val ? parseInt(val).toLocaleString() : '');
                                     }}
                                     placeholder="480,000"
-                                    className="w-full pl-7 pr-2 py-2.5 rounded-lg bg-slate-900/80 border border-slate-600 text-white font-medium placeholder-slate-600 focus:border-slate-500 focus:outline-none transition-all"
+                                    className="w-full pl-8 pr-2 py-2.5 rounded-lg bg-slate-900/80 border border-slate-600 text-white font-medium placeholder-slate-600 focus:border-slate-500 focus:outline-none transition-all"
                                 />
                             </div>
                         </div>

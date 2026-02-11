@@ -4,19 +4,19 @@
 
 :root {
   /* Lighter dark green theme */
-  --bg-primary: #141f1a;
-  --bg-secondary: #1c2e24;
-  --bg-tertiary: #26402f;
+  --bg-primary: #1a2b22;
+  --bg-secondary: #243828;
+  --bg-tertiary: #2f4d38;
   --text-primary: #ecf7ee;
   --text-secondary: #a5ccaa;
   --text-muted: #74a07b;
-  --border-color: #345e3e;
+  --border-color: #3d6b48;
   /* FL Home Buyers brand green gradient */
   --accent-gradient: linear-gradient(135deg, #4CAF50 0%, #2E7D32 100%);
   --accent-color: #4CAF50;
   --accent-dark: #2E7D32;
-  --glass-bg: rgba(26, 46, 36, 0.92);
-  --glass-border: rgba(76, 175, 80, 0.3);
+  --glass-bg: rgba(32, 54, 42, 0.88);
+  --glass-border: rgba(76, 175, 80, 0.25);
 }
 
 * {
@@ -43,8 +43,8 @@ body {
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
   border: 1px solid var(--glass-border);
-  border-radius: 16px;
-  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+  border-radius: 14px;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.25);
   transition: transform 0.2s ease, box-shadow 0.2s ease;
 }
 
@@ -63,7 +63,7 @@ body {
 
 /* Input styles */
 .input-field {
-  @apply w-full px-4 py-3 rounded-xl transition-all duration-200;
+  @apply w-full px-3 py-2.5 rounded-lg transition-all duration-200;
   background: var(--bg-tertiary);
   border: 1px solid var(--border-color);
   color: var(--text-primary);
@@ -87,7 +87,7 @@ body {
 
 /* Button styles */
 .btn-primary {
-  @apply px-6 py-3 rounded-xl font-semibold transition-all duration-200;
+  @apply px-5 py-2.5 rounded-lg font-semibold transition-all duration-200;
   background: var(--accent-gradient);
   color: white;
   border: none;
@@ -117,7 +117,7 @@ body {
 }
 
 .btn-secondary {
-  @apply px-6 py-3 rounded-xl font-semibold transition-all duration-200;
+  @apply px-5 py-2.5 rounded-lg font-semibold transition-all duration-200;
   background: var(--bg-tertiary);
   color: var(--text-primary);
   border: 1px solid var(--border-color);
@@ -248,7 +248,7 @@ input[type="number"]::-webkit-outer-spin-button {
 .section-divider {
   height: 1px;
   background: linear-gradient(90deg, transparent, var(--border-color), transparent);
-  margin: 24px 0;
+  margin: 16px 0;
 }
 
 /* Tooltip */
@@ -282,42 +282,57 @@ input[type="number"]::-webkit-outer-spin-button {
 input[type="range"] {
   -webkit-appearance: none;
   appearance: none;
-  height: 12px;
-  border-radius: 6px;
+  height: 8px;
+  border-radius: 4px;
+  background: #2a4a35;
   cursor: pointer;
+}
+
+input[type="range"]::-webkit-slider-runnable-track {
+  height: 8px;
+  border-radius: 4px;
+  background: #2a4a35;
+}
+
+input[type="range"]::-moz-range-track {
+  height: 8px;
+  border-radius: 4px;
+  background: #2a4a35;
+  border: none;
 }
 
 input[type="range"]::-webkit-slider-thumb {
   -webkit-appearance: none;
   appearance: none;
-  width: 28px;
-  height: 28px;
+  width: 24px;
+  height: 24px;
   border-radius: 50%;
   background: linear-gradient(135deg, #10b981 0%, #059669 100%);
   cursor: pointer;
-  border: 4px solid white;
-  box-shadow: 0 4px 12px rgba(16, 185, 129, 0.4);
+  border: 3px solid #c5dcc8;
+  box-shadow: 0 2px 8px rgba(16, 185, 129, 0.35);
   transition: transform 0.2s, box-shadow 0.2s;
+  margin-top: -8px;
 }
 
 input[type="range"]::-webkit-slider-thumb:hover {
   transform: scale(1.1);
-  box-shadow: 0 6px 16px rgba(16, 185, 129, 0.5);
+  box-shadow: 0 4px 12px rgba(16, 185, 129, 0.45);
 }
 
 input[type="range"]::-webkit-slider-thumb:active {
   transform: scale(1.15);
-  box-shadow: 0 0 0 4px rgba(16, 185, 129, 0.3), 0 6px 20px rgba(16, 185, 129, 0.6);
+  box-shadow: 0 0 0 4px rgba(16, 185, 129, 0.25), 0 4px 16px rgba(16, 185, 129, 0.5);
 }
 
 input[type="range"]::-moz-range-thumb {
-  width: 28px;
-  height: 28px;
+  width: 24px;
+  height: 24px;
   border-radius: 50%;
   background: linear-gradient(135deg, #10b981 0%, #059669 100%);
   cursor: pointer;
-  border: 4px solid white;
-  box-shadow: 0 4px 12px rgba(16, 185, 129, 0.4);
+  border: 3px solid #c5dcc8;
+  box-shadow: 0 2px 8px rgba(16, 185, 129, 0.35);
 }
 
 /* Gradient border shimmer for hero cards */
