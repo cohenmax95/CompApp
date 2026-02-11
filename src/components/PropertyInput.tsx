@@ -103,7 +103,8 @@ export default function PropertyInput({
                                         applyRepair(val);
                                     }}
                                     placeholder="Enter custom amount"
-                                    className="input-field pl-10 font-semibold text-lg"
+                                    className="input-field font-semibold text-lg"
+                                    style={{ paddingLeft: '2.5rem' }}
                                 />
                             </div>
                         </div>

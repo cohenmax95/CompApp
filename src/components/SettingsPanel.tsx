@@ -157,7 +157,8 @@ export default function SettingsPanel({ settings, onSettingsChange }: SettingsPa
                                         type="number"
                                         value={settings.minProfitReserve}
                                         onChange={(e) => updateSetting('minProfitReserve', parseFloat(e.target.value))}
-                                        className="input-field pl-8"
+                                        className="input-field"
+                                        style={{ paddingLeft: '2rem' }}
                                         min="0"
                                         step="1000"
                                     />
@@ -171,7 +172,8 @@ export default function SettingsPanel({ settings, onSettingsChange }: SettingsPa
                                         type="number"
                                         value={settings.makeReadyReserve}
                                         onChange={(e) => updateSetting('makeReadyReserve', parseFloat(e.target.value))}
-                                        className="input-field pl-8"
+                                        className="input-field"
+                                        style={{ paddingLeft: '2rem' }}
                                         min="0"
                                         step="1000"
                                     />
