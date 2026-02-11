@@ -17,11 +17,12 @@ interface OfferResultsDisplayProps {
     onInputsChange: (inputs: OfferInputs) => void;
     onSqftChange: (sqft: number) => void;
     county?: string | null;
+    address?: string;
 }
 
 export default function OfferResultsDisplay({
     results, hasInputs, arv, repairEstimate, sqft,
-    inputs, onInputsChange, onSqftChange, county
+    inputs, onInputsChange, onSqftChange, county, address
 }: OfferResultsDisplayProps) {
     const [activeTab, setActiveTab] = useState<'fixflip' | 'wholesale'>('fixflip');
     const [arvPercent, setArvPercent] = useState(70);
@@ -79,7 +80,7 @@ export default function OfferResultsDisplay({
                     <div className="border-t border-slate-700/50 pt-3">
                         <h3 className="font-bold text-white text-lg mb-1">Fix & Flip Breakdown</h3>
                         <p className="text-xs text-slate-500 mb-3">Step-by-step profit analysis</p>
-                        <FixFlipCalculator arv={arv} repairEstimate={repairEstimate} sqft={sqft} county={county} />
+                        <FixFlipCalculator arv={arv} repairEstimate={repairEstimate} sqft={sqft} county={county} address={address} />
                     </div>
                 </div>
             ) : (

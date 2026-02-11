@@ -531,6 +531,7 @@ Best Offer: ${formatCurrency(results.bestOffer.offerPrice)} (${results.bestStrat
                     onInputsChange={(inputs) => setState((s) => ({ ...s, inputs }))}
                     onSqftChange={(sqft) => setState((s) => ({ ...s, sqft }))}
                     county={detectedCounty}
+                    address={state.address}
                 />
 
                 {/* Settings — collapsible at bottom */}

@@ -3,12 +3,14 @@
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { formatCurrency } from '@/lib/calculations';
 import { getCountyTaxRate } from '@/lib/fl-counties';
+import DealMemo from './DealMemo';
 
 interface FixFlipCalculatorProps {
     arv: number;
     repairEstimate: number;
     sqft: number;
     county?: string | null;
+    address?: string;
 }
 
 interface CostAssumptions {
@@ -95,7 +97,7 @@ const haptic = () => {
     }
 };
 
-export default function FixFlipCalculator({ arv, repairEstimate, sqft, county }: FixFlipCalculatorProps) {
+export default function FixFlipCalculator({ arv, repairEstimate, sqft, county, address }: FixFlipCalculatorProps) {
     const [arvPercent, setArvPercent] = useState(70);
     const [holdMonths, setHoldMonths] = useState(5);
     const [loanPercent, setLoanPercent] = useState(90);
@@ -128,7 +130,7 @@ export default function FixFlipCalculator({ arv, repairEstimate, sqft, county }:
     const toggleAll = () => setExpanded(allExpanded ? new Set() : new Set(allSections));
 
     // STEP 1: Purchase Price
-    const purchasePrice = Math.round(arv * (arvPercent / 100) - repairEstimate);
+    const purchasePrice = Math.round(arv * (arvPercent / 100));
 
     // STEP 2: Acquisition Closing Costs
     const acquireClosing = Math.round(purchasePrice * (costs.closingPct / 100));
@@ -235,7 +237,7 @@ export default function FixFlipCalculator({ arv, repairEstimate, sqft, county }:
                 {expanded.has('acq') && (
                     <div className="ml-5 p-3 rounded-xl bg-slate-900/50 text-xs text-slate-500 space-y-1.5">
                         <div className="flex justify-between items-center">
-                            <span>Purchase Price ({arvPercent}% ARV − repairs)</span>
+                            <span>Purchase Price ({arvPercent}% of ARV)</span>
                             <span>{formatCurrency(purchasePrice)}</span>
                         </div>
                         <div className="flex justify-between items-center">
@@ -316,6 +318,20 @@ export default function FixFlipCalculator({ arv, repairEstimate, sqft, county }:
                     </div>
                 </div>
             </div>
+
+            {/* AI Deal Memo */}
+            <DealMemo
+                address={address || ''}
+                arv={arv}
+                purchasePrice={purchasePrice}
+                repairEstimate={repairEstimate}
+                totalInvestment={totalInvestment}
+                netProfit={grossProfit}
+                roi={roi}
+                holdMonths={holdMonths}
+                loanPercent={loanPercent}
+                sqft={sqft}
+            />
         </div>
     );
 }
